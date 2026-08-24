@@ -24,6 +24,7 @@ import { getAuthContext, getClientAccessState, type AuthContext, type ClientAcce
 import { applyBranding, defaultBranding, resolvePublicBranding, type TenantBranding } from './lib/branding'
 import { visibleClientNavigation } from './lib/client-navigation'
 import CustomerJourneyModule from './components/CustomerJourneyModule'
+import LeadsModule from './components/LeadsModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -54,7 +55,7 @@ export default function ClientPortal() {
   const [message, setMessage] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true })
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true, sales: true })
   const [activeSection, setActiveSection] = useState('dashboard')
 
   useEffect(() => {
@@ -118,6 +119,7 @@ export default function ClientPortal() {
   if (accessState !== 'allowed') return <div className="center-screen stack narrow"><ShieldAlert size={42} /><h2>Company access unavailable</h2><p className="muted">{accessMessages[accessState]}</p><button onClick={logout}>Sign out</button></div>
 
   const customerMode = activeSection === 'sales-followups' ? 'followups' : activeSection
+  const isAdmin = context.role === 'client_admin'
 
   return <div className="msuk-shell">
     {sidebarOpen && <button className="sidebar-overlay" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
@@ -134,11 +136,12 @@ export default function ClientPortal() {
     </aside>
 
     <div className="msuk-main">
-      <header className="msuk-topbar"><button className="menu-trigger" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="global-search"><Search size={18} /><input placeholder="Search customers, leads, invoices..." /></div><button className="quick-add" onClick={() => setActiveSection('customers')}>+ Add Lead</button><div className="profile-wrap"><button className="profile-trigger" onClick={() => setProfileOpen((open) => !open)}><span className="avatar">{(context.fullName || context.email || '?').charAt(0).toUpperCase()}</span><span className="profile-copy"><strong>{context.fullName || 'Account'}</strong><small>{context.role === 'client_admin' ? 'Client Admin' : 'Employee'}</small></span><ChevronDown size={16} /></button>{profileOpen && <div className="profile-menu"><strong>{context.fullName || 'Account'}</strong><small>{context.email}</small><button onClick={() => setActiveSection('profile')}>My Profile</button><button onClick={() => setActiveSection('change-password')}>Change Password</button>{context.role === 'client_admin' && <button onClick={() => setActiveSection('user-management')}>User Management</button>}{context.role === 'client_admin' && <button onClick={() => setActiveSection('branding')}>Branding Settings</button>}<button onClick={logout}><LogOut size={15} /> Logout</button></div>}</div></header>
+      <header className="msuk-topbar"><button className="menu-trigger" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="global-search"><Search size={18} /><input placeholder="Search customers, leads, invoices..." /></div><button className="quick-add" onClick={() => setActiveSection('add-lead')}>+ Add Lead</button><div className="profile-wrap"><button className="profile-trigger" onClick={() => setProfileOpen((open) => !open)}><span className="avatar">{(context.fullName || context.email || '?').charAt(0).toUpperCase()}</span><span className="profile-copy"><strong>{context.fullName || 'Account'}</strong><small>{context.role === 'client_admin' ? 'Client Admin' : 'Employee'}</small></span><ChevronDown size={16} /></button>{profileOpen && <div className="profile-menu"><strong>{context.fullName || 'Account'}</strong><small>{context.email}</small><button onClick={() => setActiveSection('profile')}>My Profile</button><button onClick={() => setActiveSection('change-password')}>Change Password</button>{isAdmin && <button onClick={() => setActiveSection('user-management')}>User Management</button>}{isAdmin && <button onClick={() => setActiveSection('branding')}>Branding Settings</button>}<button onClick={logout}><LogOut size={15} /> Logout</button></div>}</div></header>
 
       <main className="msuk-content">
         {activeSection === 'dashboard' ? <><div className="dashboard-heading"><div><h1>Dashboard</h1><p>Your solar business at a glance — updated every minute.</p></div></div><section className="dashboard-grid">{dashboardCards.map((card) => { const Icon = card.icon; return <button className="dashboard-card" key={card.label}><div className={`kpi-icon ${card.tone}`}><Icon size={19} /></div><ArrowRight size={16} className="card-arrow" /><div className="kpi-copy"><strong>{card.value}</strong><span>{card.label}</span><small>{card.hint}</small></div></button> })}</section></>
         : customerModes.has(activeSection) && context.tenantId ? <CustomerJourneyModule tenantId={context.tenantId} mode={customerMode as 'journey-dashboard' | 'customers' | 'followups' | 'pipeline'} />
+        : (activeSection === 'leads' || activeSection === 'add-lead') && context.tenantId ? <LeadsModule tenantId={context.tenantId} isAdmin={isAdmin} startInAddMode={activeSection === 'add-lead'} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
