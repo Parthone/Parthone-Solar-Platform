@@ -27,11 +27,32 @@ async function requireClientAdmin(uid: string) {
   if (!tenant.exists || tenantData?.status !== 'active' || tenantData?.planStatus === 'inactive') {
     throw new HttpsError('failed-precondition', 'Company access is not active.')
   }
-  return { tenantId: String(data.tenantId), tenantData: tenantData ?? {} }
+  return { tenantId: String(data.tenantId), tenantData: tenantData ?? {}, userData: data }
 }
 
 function employeeRole(value: unknown): 'client_admin' | 'employee' {
   return value === 'client_admin' ? 'client_admin' : 'employee'
+}
+
+async function writeAudit(input: {
+  tenantId: string
+  userId: string | null
+  userName: string | null
+  module: string
+  action: string
+  previousValue?: string | null
+  newValue?: string | null
+}) {
+  await adminDb.collection('auditLogs').add({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    userName: input.userName,
+    module: input.module,
+    action: input.action,
+    previousValue: input.previousValue ?? null,
+    newValue: input.newValue ?? null,
+    createdAt: FieldValue.serverTimestamp(),
+  })
 }
 
 export const platformHealth = onCall((request) => {
@@ -189,7 +210,7 @@ export const onboardClient = onCall(async (request) => {
 
 export const createClientUser = onCall(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
-  const { tenantId, tenantData } = await requireClientAdmin(request.auth.uid)
+  const { tenantId, tenantData, userData } = await requireClientAdmin(request.auth.uid)
 
   const fullName = String(request.data?.fullName ?? '').trim()
   const email = String(request.data?.email ?? '').trim().toLowerCase()
@@ -229,6 +250,7 @@ export const createClientUser = onCall(async (request) => {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     })
+    await writeAudit({ tenantId, userId: request.auth.uid, userName: String(userData.fullName ?? 'Client Admin'), module: 'Users', action: 'Create User', newValue: `${fullName} · ${role}` })
     return { success: true, uid: createdUser.uid }
   } catch (error) {
     if (createdUser) {
@@ -242,7 +264,7 @@ export const createClientUser = onCall(async (request) => {
 
 export const updateClientUser = onCall(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
-  const { tenantId } = await requireClientAdmin(request.auth.uid)
+  const { tenantId, userData } = await requireClientAdmin(request.auth.uid)
   const uid = String(request.data?.uid ?? '').trim()
   if (!uid) throw new HttpsError('invalid-argument', 'User ID is required.')
 
@@ -288,12 +310,13 @@ export const updateClientUser = onCall(async (request) => {
     }),
   ])
 
+  await writeAudit({ tenantId, userId: request.auth.uid, userName: String(userData.fullName ?? 'Client Admin'), module: 'Users', action: 'Update User', previousValue: `${target.fullName ?? ''} · ${target.role ?? ''} · ${target.isActive === false ? 'Inactive' : 'Active'}`, newValue: `${fullName} · ${role} · ${isActive ? 'Active' : 'Inactive'}` })
   return { success: true }
 })
 
 export const resetClientUserPassword = onCall(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
-  const { tenantId } = await requireClientAdmin(request.auth.uid)
+  const { tenantId, userData } = await requireClientAdmin(request.auth.uid)
   const uid = String(request.data?.uid ?? '').trim()
   const password = String(request.data?.password ?? '')
   if (!uid || password.length < 8) throw new HttpsError('invalid-argument', 'User and an 8+ character password are required.')
@@ -306,5 +329,58 @@ export const resetClientUserPassword = onCall(async (request) => {
 
   await adminAuth.updateUser(uid, { password })
   await target.ref.update({ passwordResetAt: FieldValue.serverTimestamp(), passwordResetBy: request.auth.uid, updatedAt: FieldValue.serverTimestamp() })
+  await writeAudit({ tenantId, userId: request.auth.uid, userName: String(userData.fullName ?? 'Client Admin'), module: 'Users', action: 'Reset Password', newValue: String(data.fullName ?? data.email ?? uid) })
+  return { success: true }
+})
+
+export const saveExternalLink = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
+  const { tenantId, userData } = await requireClientAdmin(request.auth.uid)
+  const id = String(request.data?.id ?? '').trim()
+  const name = String(request.data?.name ?? '').trim()
+  const category = String(request.data?.category ?? 'General').trim() || 'General'
+  const url = String(request.data?.url ?? '').trim()
+  const isActive = request.data?.isActive !== false
+  if (!name || !/^https?:\/\//i.test(url)) throw new HttpsError('invalid-argument', 'Name and a valid http(s) URL are required.')
+
+  const ref = id ? adminDb.collection('externalLinks').doc(id) : adminDb.collection('externalLinks').doc()
+  const previous = id ? await ref.get() : null
+  if (previous && previous.exists && previous.data()?.tenantId !== tenantId) throw new HttpsError('permission-denied', 'Link does not belong to your company.')
+
+  await ref.set({
+    tenantId,
+    name,
+    category,
+    url,
+    isActive,
+    createdBy: previous?.data()?.createdBy ?? request.auth.uid,
+    createdAt: previous?.data()?.createdAt ?? FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: request.auth.uid,
+  }, { merge: true })
+
+  await writeAudit({
+    tenantId,
+    userId: request.auth.uid,
+    userName: String(userData.fullName ?? 'Client Admin'),
+    module: 'External Links',
+    action: id ? 'Update Link' : 'Create Link',
+    previousValue: previous?.exists ? `${previous.data()?.name ?? ''} · ${previous.data()?.url ?? ''}` : null,
+    newValue: `${name} · ${url} · ${isActive ? 'Active' : 'Inactive'}`,
+  })
+  return { success: true, id: ref.id }
+})
+
+export const deleteExternalLink = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
+  const { tenantId, userData } = await requireClientAdmin(request.auth.uid)
+  const id = String(request.data?.id ?? '').trim()
+  if (!id) throw new HttpsError('invalid-argument', 'Link ID is required.')
+  const ref = adminDb.collection('externalLinks').doc(id)
+  const snapshot = await ref.get()
+  const data = snapshot.data()
+  if (!snapshot.exists || data?.tenantId !== tenantId) throw new HttpsError('not-found', 'Link not found in your company.')
+  await ref.delete()
+  await writeAudit({ tenantId, userId: request.auth.uid, userName: String(userData.fullName ?? 'Client Admin'), module: 'External Links', action: 'Delete Link', previousValue: `${data?.name ?? ''} · ${data?.url ?? ''}` })
   return { success: true }
 })
