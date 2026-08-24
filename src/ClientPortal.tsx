@@ -29,6 +29,7 @@ import SalesDocumentsModule from './components/SalesDocumentsModule'
 import InventoryModule from './components/InventoryModule'
 import FinanceModule from './components/FinanceModule'
 import EmployeesModule from './components/EmployeesModule'
+import TrackingProfileModule from './components/TrackingProfileModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -52,6 +53,7 @@ const customerModes = new Set(['journey-dashboard', 'customers', 'followups', 's
 const salesDocumentModes = new Set(['quotations', 'invoices', 'invoice-reports'])
 const inventoryModes = new Set(['inventory-overview', 'purchases', 'panel-inventory', 'issues', 'reservations', 'movements', 'suppliers'])
 const financeModes = new Set(['expenses', 'expense-categories', 'account-statement-confirmation'])
+const trackingModes = new Set(['live-tracking', 'profile', 'mobile-app'])
 
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
@@ -153,6 +155,7 @@ export default function ClientPortal() {
         : inventoryModes.has(activeSection) && context.tenantId ? <InventoryModule tenantId={context.tenantId} mode={activeSection as 'inventory-overview' | 'purchases' | 'panel-inventory' | 'issues' | 'reservations' | 'movements' | 'suppliers'} />
         : financeModes.has(activeSection) && context.tenantId ? <FinanceModule tenantId={context.tenantId} mode={activeSection as 'expenses' | 'expense-categories' | 'account-statement-confirmation'} currentUserName={context.fullName} />
         : activeSection === 'user-management' && context.tenantId && isAdmin ? <EmployeesModule tenantId={context.tenantId} currentUserId={context.userId} />
+        : trackingModes.has(activeSection) && context.tenantId ? <TrackingProfileModule tenantId={context.tenantId} userId={context.userId} fullName={context.fullName || context.email || 'Employee'} role={context.role === 'client_admin' ? 'client_admin' : 'employee'} mode={activeSection as 'live-tracking' | 'profile' | 'mobile-app'} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
