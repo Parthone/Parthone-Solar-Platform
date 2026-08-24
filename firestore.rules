@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function role() { return signedIn() ? userDoc().data.role : null; }
+    function tenantId() { return signedIn() ? userDoc().data.tenantId : null; }
+    function isSuperAdmin() { return signedIn() && role() == 'parthone_super_admin'; }
+    function isClientAdmin() { return signedIn() && role() == 'client_admin'; }
+    function sameTenant(id) { return signedIn() && tenantId() == id; }
+
+    match /tenants/{tenantIdDoc} {
+      allow read: if isSuperAdmin() || sameTenant(tenantIdDoc);
+      allow create, update, delete: if isSuperAdmin();
+
+      match /{document=**} {
+        allow read, write: if isSuperAdmin() || sameTenant(tenantIdDoc);
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if isSuperAdmin() || (signedIn() && request.auth.uid == userId) ||
+        (isClientAdmin() && resource.data.tenantId == tenantId());
+      allow create, update, delete: if isSuperAdmin() ||
+        (isClientAdmin() && request.resource.data.tenantId == tenantId() && request.resource.data.role != 'parthone_super_admin');
+    }
+
+    match /platform/{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+  }
+}
