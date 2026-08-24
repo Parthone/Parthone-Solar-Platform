@@ -29,32 +29,19 @@ export const bootstrapSuperAdmin = onCall(async (request) => {
   const fullName = String(request.data?.fullName ?? '').trim()
   const secret = String(request.data?.secret ?? '')
 
-  if (!bootstrapEmail || !bootstrapSecret) {
-    throw new HttpsError('failed-precondition', 'Bootstrap environment is not configured.')
-  }
-  if (email !== bootstrapEmail || secret !== bootstrapSecret) {
-    throw new HttpsError('permission-denied', 'Bootstrap credentials are invalid.')
-  }
-  if (!fullName || password.length < 8) {
-    throw new HttpsError('invalid-argument', 'Name and an 8+ character password are required.')
-  }
+  if (!bootstrapEmail || !bootstrapSecret) throw new HttpsError('failed-precondition', 'Bootstrap environment is not configured.')
+  if (email !== bootstrapEmail || secret !== bootstrapSecret) throw new HttpsError('permission-denied', 'Bootstrap credentials are invalid.')
+  if (!fullName || password.length < 8) throw new HttpsError('invalid-argument', 'Name and an 8+ character password are required.')
 
   const existing = await adminDb.collection('users').where('role', '==', 'parthone_super_admin').limit(1).get()
-  if (!existing.empty) {
-    throw new HttpsError('already-exists', 'A Parthone Super Admin already exists.')
-  }
+  if (!existing.empty) throw new HttpsError('already-exists', 'A Parthone Super Admin already exists.')
 
   let user
   try {
     user = await adminAuth.getUserByEmail(email)
     await adminAuth.updateUser(user.uid, { password, displayName: fullName, disabled: false })
   } catch {
-    user = await adminAuth.createUser({
-      email,
-      password,
-      displayName: fullName,
-      emailVerified: true,
-    })
+    user = await adminAuth.createUser({ email, password, displayName: fullName, emailVerified: true })
   }
 
   await adminDb.collection('users').doc(user.uid).set({
@@ -78,25 +65,22 @@ export const onboardClient = onCall(async (request) => {
   const slug = String(request.data?.slug ?? '').trim().toLowerCase()
   const companyEmail = String(request.data?.companyEmail ?? '').trim().toLowerCase()
   const phone = String(request.data?.phone ?? '').trim()
+  const address = String(request.data?.address ?? '').trim()
+  const gstNumber = String(request.data?.gstNumber ?? '').trim().toUpperCase()
   const customDomain = String(request.data?.customDomain ?? '').trim().toLowerCase()
   const planName = String(request.data?.planName ?? 'standard').trim() || 'standard'
   const logoUrl = String(request.data?.logoUrl ?? '').trim()
   const primaryColor = String(request.data?.primaryColor ?? '#2563eb').trim()
+  const secondaryColor = String(request.data?.secondaryColor ?? '#0f243f').trim()
   const adminName = String(request.data?.adminName ?? '').trim()
   const adminEmail = String(request.data?.adminEmail ?? '').trim().toLowerCase()
   const adminPassword = String(request.data?.adminPassword ?? '')
   const userLimitRaw = Number(request.data?.userLimit ?? 0)
   const userLimit = Number.isFinite(userLimitRaw) && userLimitRaw > 0 ? userLimitRaw : null
 
-  if (!companyName || !slug || !adminName || !adminEmail || !adminPassword) {
-    throw new HttpsError('invalid-argument', 'Company, slug and first admin details are required.')
-  }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-    throw new HttpsError('invalid-argument', 'Slug may contain lowercase letters, numbers and hyphens only.')
-  }
-  if (adminPassword.length < 8) {
-    throw new HttpsError('invalid-argument', 'Admin password must be at least 8 characters.')
-  }
+  if (!companyName || !slug || !adminName || !adminEmail || !adminPassword) throw new HttpsError('invalid-argument', 'Company, slug and first admin details are required.')
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new HttpsError('invalid-argument', 'Slug may contain lowercase letters, numbers and hyphens only.')
+  if (adminPassword.length < 8) throw new HttpsError('invalid-argument', 'Admin password must be at least 8 characters.')
 
   const slugMatch = await adminDb.collection('tenants').where('slug', '==', slug).limit(1).get()
   if (!slugMatch.empty) throw new HttpsError('already-exists', 'This company slug is already in use.')
@@ -118,13 +102,22 @@ export const onboardClient = onCall(async (request) => {
   let createdUser: Awaited<ReturnType<typeof adminAuth.createUser>> | null = null
 
   try {
-    createdUser = await adminAuth.createUser({
-      email: adminEmail,
-      password: adminPassword,
-      displayName: adminName,
-      emailVerified: true,
-      disabled: false,
-    })
+    createdUser = await adminAuth.createUser({ email: adminEmail, password: adminPassword, displayName: adminName, emailVerified: true, disabled: false })
+
+    const publicBranding = {
+      tenantId: tenantRef.id,
+      companyName,
+      slug,
+      customDomain: customDomain || null,
+      logoUrl: logoUrl || null,
+      primaryColor: primaryColor || '#2563eb',
+      secondaryColor: secondaryColor || '#0f243f',
+      email: companyEmail || null,
+      phone: phone || null,
+      address: address || null,
+      gstNumber: gstNumber || null,
+      updatedAt: FieldValue.serverTimestamp(),
+    }
 
     const batch = adminDb.batch()
     batch.set(tenantRef, {
@@ -133,20 +126,19 @@ export const onboardClient = onCall(async (request) => {
       status: 'active',
       email: companyEmail || null,
       phone: phone || null,
+      address: address || null,
+      gstNumber: gstNumber || null,
       customDomain: customDomain || null,
       planName,
       planStatus: 'active',
       userLimit,
       storageLimitMb: null,
-      branding: {
-        logoUrl: logoUrl || null,
-        primaryColor: primaryColor || '#2563eb',
-      },
+      branding: { logoUrl: logoUrl || null, primaryColor: primaryColor || '#2563eb', secondaryColor: secondaryColor || '#0f243f' },
       onboardingStatus: 'ready',
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     })
-
+    batch.set(adminDb.collection('publicTenantBranding').doc(tenantRef.id), publicBranding)
     batch.set(adminDb.collection('users').doc(createdUser.uid), {
       tenantId: tenantRef.id,
       fullName: adminName,
@@ -156,7 +148,6 @@ export const onboardClient = onCall(async (request) => {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     })
-
     batch.set(adminDb.collection('platform').doc('onboarding').collection('events').doc(), {
       tenantId: tenantRef.id,
       tenantName: companyName,
@@ -167,13 +158,7 @@ export const onboardClient = onCall(async (request) => {
     })
 
     await batch.commit()
-
-    return {
-      success: true,
-      tenantId: tenantRef.id,
-      companyName,
-      admin: { uid: createdUser.uid, fullName: adminName, email: adminEmail },
-    }
+    return { success: true, tenantId: tenantRef.id, companyName, admin: { uid: createdUser.uid, fullName: adminName, email: adminEmail } }
   } catch (error) {
     if (createdUser) {
       try { await adminAuth.deleteUser(createdUser.uid) } catch { /* best-effort rollback */ }
