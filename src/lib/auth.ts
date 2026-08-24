@@ -1,4 +1,5 @@
-import { supabase } from './supabase'
+import { doc, getDoc } from 'firebase/firestore'
+import { auth, db } from './firebase'
 import type { PlatformRole } from './tenant'
 
 export type AuthContext = {
@@ -14,30 +15,41 @@ export type AuthContext = {
 }
 
 export async function getAuthContext(): Promise<AuthContext | null> {
-  const { data: auth } = await supabase.auth.getUser()
-  const user = auth.user
+  const user = auth.currentUser
   if (!user) return null
 
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('id,tenant_id,full_name,role,is_active,tenants(name,slug,status,plan_status)')
-    .eq('id', user.id)
-    .maybeSingle()
+  const userSnapshot = await getDoc(doc(db, 'users', user.uid))
+  if (!userSnapshot.exists()) return null
 
-  if (error || !profile || !profile.is_active) return null
+  const profile = userSnapshot.data()
+  if (profile.isActive === false) return null
 
-  const tenant = Array.isArray(profile.tenants) ? profile.tenants[0] : profile.tenants
+  let tenantName: string | null = null
+  let tenantSlug: string | null = null
+  let tenantStatus: AuthContext['tenantStatus'] = null
+  let planStatus: string | null = null
+
+  if (profile.tenantId) {
+    const tenantSnapshot = await getDoc(doc(db, 'tenants', profile.tenantId))
+    if (tenantSnapshot.exists()) {
+      const tenant = tenantSnapshot.data()
+      tenantName = tenant.name ?? null
+      tenantSlug = tenant.slug ?? null
+      tenantStatus = tenant.status ?? null
+      planStatus = tenant.planStatus ?? null
+    }
+  }
 
   return {
-    userId: user.id,
-    email: user.email ?? null,
-    fullName: profile.full_name,
-    role: profile.role,
-    tenantId: profile.tenant_id,
-    tenantName: tenant?.name ?? null,
-    tenantSlug: tenant?.slug ?? null,
-    tenantStatus: tenant?.status ?? null,
-    planStatus: tenant?.plan_status ?? null,
+    userId: user.uid,
+    email: user.email,
+    fullName: profile.fullName ?? null,
+    role: profile.role as PlatformRole,
+    tenantId: profile.tenantId ?? null,
+    tenantName,
+    tenantSlug,
+    tenantStatus,
+    planStatus,
   }
 }
 
