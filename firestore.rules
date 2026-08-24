@@ -5,24 +5,45 @@ service cloud.firestore {
     function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
     function role() { return signedIn() ? userDoc().data.role : null; }
     function tenantId() { return signedIn() ? userDoc().data.tenantId : null; }
-    function isSuperAdmin() { return signedIn() && role() == 'parthone_super_admin'; }
-    function isClientAdmin() { return signedIn() && role() == 'client_admin'; }
-    function sameTenant(id) { return signedIn() && tenantId() == id; }
+    function userActive() { return signedIn() && userDoc().data.isActive != false; }
+    function tenantDoc(id) { return get(/databases/$(database)/documents/tenants/$(id)); }
+    function tenantActive(id) {
+      return tenantDoc(id).data.status == 'active' && tenantDoc(id).data.planStatus != 'inactive';
+    }
+    function isSuperAdmin() { return signedIn() && userActive() && role() == 'parthone_super_admin'; }
+    function isClientAdmin() { return signedIn() && userActive() && role() == 'client_admin'; }
+    function sameTenant(id) { return signedIn() && userActive() && tenantId() == id; }
+    function activeSameTenant(id) { return sameTenant(id) && tenantActive(id); }
 
     match /tenants/{tenantIdDoc} {
+      // Client users may read their tenant document so the app can show suspended/inactive status.
       allow read: if isSuperAdmin() || sameTenant(tenantIdDoc);
       allow create, update, delete: if isSuperAdmin();
 
       match /{document=**} {
-        allow read, write: if isSuperAdmin() || sameTenant(tenantIdDoc);
+        // Business data is inaccessible when the tenant or plan is not active.
+        allow read, write: if isSuperAdmin() || activeSameTenant(tenantIdDoc);
       }
     }
 
     match /users/{userId} {
-      allow read: if isSuperAdmin() || (signedIn() && request.auth.uid == userId) ||
-        (isClientAdmin() && resource.data.tenantId == tenantId());
-      allow create, update, delete: if isSuperAdmin() ||
-        (isClientAdmin() && request.resource.data.tenantId == tenantId() && request.resource.data.role != 'parthone_super_admin');
+      allow read: if isSuperAdmin() ||
+        (signedIn() && request.auth.uid == userId) ||
+        (isClientAdmin() && activeSameTenant(resource.data.tenantId) && resource.data.tenantId == tenantId());
+
+      allow create: if isSuperAdmin() ||
+        (isClientAdmin() && activeSameTenant(request.resource.data.tenantId) &&
+         request.resource.data.tenantId == tenantId() &&
+         request.resource.data.role != 'parthone_super_admin');
+
+      allow update: if isSuperAdmin() ||
+        (isClientAdmin() && activeSameTenant(resource.data.tenantId) &&
+         resource.data.tenantId == tenantId() &&
+         request.resource.data.tenantId == tenantId() &&
+         request.resource.data.role != 'parthone_super_admin');
+
+      allow delete: if isSuperAdmin() ||
+        (isClientAdmin() && activeSameTenant(resource.data.tenantId) && resource.data.tenantId == tenantId());
     }
 
     match /platform/{document=**} {
