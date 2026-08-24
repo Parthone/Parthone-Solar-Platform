@@ -7,12 +7,22 @@ export type AuthContext = {
   email: string | null
   fullName: string | null
   role: PlatformRole
+  userActive: boolean
   tenantId: string | null
   tenantName: string | null
   tenantSlug: string | null
   tenantStatus: 'active' | 'suspended' | 'inactive' | null
-  planStatus: string | null
+  planStatus: 'active' | 'inactive' | null
 }
+
+export type ClientAccessState =
+  | 'allowed'
+  | 'super_admin'
+  | 'user_inactive'
+  | 'tenant_missing'
+  | 'tenant_suspended'
+  | 'tenant_inactive'
+  | 'plan_inactive'
 
 export async function getAuthContext(): Promise<AuthContext | null> {
   const user = auth.currentUser
@@ -22,12 +32,10 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   if (!userSnapshot.exists()) return null
 
   const profile = userSnapshot.data()
-  if (profile.isActive === false) return null
-
   let tenantName: string | null = null
   let tenantSlug: string | null = null
   let tenantStatus: AuthContext['tenantStatus'] = null
-  let planStatus: string | null = null
+  let planStatus: AuthContext['planStatus'] = null
 
   if (profile.tenantId) {
     const tenantSnapshot = await getDoc(doc(db, 'tenants', profile.tenantId))
@@ -45,6 +53,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     email: user.email,
     fullName: profile.fullName ?? null,
     role: profile.role as PlatformRole,
+    userActive: profile.isActive !== false,
     tenantId: profile.tenantId ?? null,
     tenantName,
     tenantSlug,
@@ -53,9 +62,18 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   }
 }
 
+export function getClientAccessState(context: AuthContext): ClientAccessState {
+  if (context.role === 'parthone_super_admin') return 'super_admin'
+  if (!context.userActive) return 'user_inactive'
+  if (!context.tenantId || !context.tenantStatus) return 'tenant_missing'
+  if (context.tenantStatus === 'suspended') return 'tenant_suspended'
+  if (context.tenantStatus === 'inactive') return 'tenant_inactive'
+  if (context.planStatus === 'inactive') return 'plan_inactive'
+  return 'allowed'
+}
+
 export function canAccessClientApp(context: AuthContext) {
-  if (context.role === 'parthone_super_admin') return true
-  return context.tenantStatus === 'active' && context.planStatus !== 'inactive' && Boolean(context.tenantId)
+  return getClientAccessState(context) === 'allowed'
 }
 
 export function isClientAdmin(context: AuthContext) {
