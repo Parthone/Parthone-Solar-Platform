@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { CheckCircle2, Plus, ShieldCheck, Target, Trash2 } from 'lucide-react'
 import { EMPLOYEE_MODULES, deleteTarget, fetchPermissionSettings, fetchTargets, fetchTenantEmployees, savePermissionSettings, saveTarget, type EmployeeModuleKey, type Target as TargetRow } from '../lib/permissions-targets'
+import '../permissions-targets.css'
 
 type Props = { tenantId: string; mode: 'roles-permissions' | 'stage-targets' | 'task-targets'; isAdmin: boolean }
 
