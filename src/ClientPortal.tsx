@@ -1,7 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Hammer, LogOut, Menu, PackageX,
-  ReceiptIndianRupee, Search, ShieldAlert, SolarPanel, UserPlus, UserRound, Wallet, X,
+  CalendarCheck, ChevronDown, ChevronRight, LogOut, Menu, ShieldAlert, SolarPanel, UserRound, X,
 } from 'lucide-react'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { auth } from './lib/firebase'
@@ -21,6 +20,8 @@ import ReportsModule from './components/ReportsModule'
 import SettingsModule from './components/SettingsModule'
 import PermissionsTargetsModule from './components/PermissionsTargetsModule'
 import ErpImportsModule from './components/ErpImportsModule'
+import DashboardHome from './components/DashboardHome'
+import GlobalSearch from './components/GlobalSearch'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -29,16 +30,6 @@ const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin
   tenant_inactive: 'Your company account is inactive. Contact Parthone support.',
   plan_inactive: 'Your company plan is inactive. Contact Parthone support.',
 }
-
-const dashboardCards = [
-  { label: "Today's Leads", value: '—', hint: 'Created today', icon: UserPlus, tone: 'primary' },
-  { label: 'Pending Follow-ups', value: '—', hint: '0 overdue', icon: CalendarCheck, tone: 'secondary' },
-  { label: 'Pending Payments', value: '—', hint: 'Outstanding Payment', icon: Wallet, tone: 'warning' },
-  { label: 'Pending Installations', value: '—', hint: 'Awaiting completion', icon: Hammer, tone: 'accent' },
-  { label: 'Employee Tasks', value: '—', hint: 'Workload signals', icon: ClipboardList, tone: 'primary' },
-  { label: 'Unpaid Invoices', value: '—', hint: 'Outstanding amount', icon: ReceiptIndianRupee, tone: 'warning' },
-  { label: 'Low Stock Alerts', value: '—', hint: 'Items below reorder level', icon: PackageX, tone: 'danger' },
-]
 
 const customerModes = new Set(['journey-dashboard', 'customers', 'followups', 'sales-followups', 'pipeline'])
 const salesDocumentModes = new Set(['quotations', 'invoices', 'invoice-reports'])
@@ -133,6 +124,7 @@ export default function ClientPortal() {
 
   const customerMode = activeSection === 'sales-followups' ? 'followups' : activeSection
   const isAdmin = context.role === 'client_admin'
+  const portalRole: 'client_admin' | 'employee' = isAdmin ? 'client_admin' : 'employee'
 
   return <div className="msuk-shell">
     {sidebarOpen && <button className="sidebar-overlay" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
@@ -149,17 +141,17 @@ export default function ClientPortal() {
     </aside>
 
     <div className="msuk-main">
-      <header className="msuk-topbar"><button className="menu-trigger" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="global-search"><Search size={18} /><input placeholder="Search customers, leads, invoices..." /></div><button className="quick-add" onClick={() => setActiveSection('add-lead')}>+ Add Lead</button><div className="profile-wrap"><button className="profile-trigger" onClick={() => setProfileOpen((open) => !open)}><span className="avatar">{(context.fullName || context.email || '?').charAt(0).toUpperCase()}</span><span className="profile-copy"><strong>{context.fullName || 'Account'}</strong><small>{context.role === 'client_admin' ? 'Client Admin' : 'Employee'}</small></span><ChevronDown size={16} /></button>{profileOpen && <div className="profile-menu"><strong>{context.fullName || 'Account'}</strong><small>{context.email}</small><button onClick={() => setActiveSection('profile')}>My Profile</button><button onClick={() => setActiveSection('change-password')}>Change Password</button>{isAdmin && <button onClick={() => setActiveSection('user-management')}>User Management</button>}{isAdmin && <button onClick={() => setActiveSection('branding')}>Branding Settings</button>}<button onClick={logout}><LogOut size={15} /> Logout</button></div>}</div></header>
+      <header className="msuk-topbar"><button className="menu-trigger" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><GlobalSearch tenantId={context.tenantId!} role={portalRole} employeeModules={employeeModules} onNavigate={setActiveSection} /><button className="quick-add" onClick={() => setActiveSection('add-lead')}>+ Add Lead</button><div className="profile-wrap"><button className="profile-trigger" onClick={() => setProfileOpen((open) => !open)}><span className="avatar">{(context.fullName || context.email || '?').charAt(0).toUpperCase()}</span><span className="profile-copy"><strong>{context.fullName || 'Account'}</strong><small>{isAdmin ? 'Client Admin' : 'Employee'}</small></span><ChevronDown size={16} /></button>{profileOpen && <div className="profile-menu"><strong>{context.fullName || 'Account'}</strong><small>{context.email}</small><button onClick={() => setActiveSection('profile')}>My Profile</button><button onClick={() => setActiveSection('change-password')}>Change Password</button>{isAdmin && <button onClick={() => setActiveSection('user-management')}>User Management</button>}{isAdmin && <button onClick={() => setActiveSection('branding')}>Branding Settings</button>}<button onClick={logout}><LogOut size={15} /> Logout</button></div>}</div></header>
 
       <main className="msuk-content">
-        {activeSection === 'dashboard' ? <><div className="dashboard-heading"><div><h1>Dashboard</h1><p>Your solar business at a glance — updated every minute.</p></div></div><section className="dashboard-grid">{dashboardCards.map((card) => { const Icon = card.icon; return <button className="dashboard-card" key={card.label}><div className={`kpi-icon ${card.tone}`}><Icon size={19} /></div><ArrowRight size={16} className="card-arrow" /><div className="kpi-copy"><strong>{card.value}</strong><span>{card.label}</span><small>{card.hint}</small></div></button> })}</section></>
+        {activeSection === 'dashboard' && context.tenantId ? <DashboardHome tenantId={context.tenantId} role={portalRole} employeeModules={employeeModules} onNavigate={setActiveSection} />
         : customerModes.has(activeSection) && context.tenantId ? <CustomerJourneyModule tenantId={context.tenantId} mode={customerMode as 'journey-dashboard' | 'customers' | 'followups' | 'pipeline'} />
         : (activeSection === 'leads' || activeSection === 'add-lead') && context.tenantId ? <LeadsModule tenantId={context.tenantId} isAdmin={isAdmin} startInAddMode={activeSection === 'add-lead'} />
         : salesDocumentModes.has(activeSection) && context.tenantId ? <SalesDocumentsModule tenantId={context.tenantId} mode={activeSection as 'quotations' | 'invoices' | 'invoice-reports'} />
         : inventoryModes.has(activeSection) && context.tenantId ? <InventoryModule tenantId={context.tenantId} mode={activeSection as 'inventory-overview' | 'purchases' | 'panel-inventory' | 'issues' | 'reservations' | 'movements' | 'suppliers'} />
         : financeModes.has(activeSection) && context.tenantId ? <FinanceModule tenantId={context.tenantId} mode={activeSection as 'expenses' | 'expense-categories' | 'account-statement-confirmation'} currentUserName={context.fullName} />
         : activeSection === 'user-management' && context.tenantId && isAdmin ? <EmployeesModule tenantId={context.tenantId} currentUserId={context.userId} />
-        : trackingModes.has(activeSection) && context.tenantId ? <TrackingProfileModule tenantId={context.tenantId} userId={context.userId} fullName={context.fullName || context.email || 'Employee'} role={context.role === 'client_admin' ? 'client_admin' : 'employee'} mode={activeSection as 'live-tracking' | 'profile' | 'mobile-app'} />
+        : trackingModes.has(activeSection) && context.tenantId ? <TrackingProfileModule tenantId={context.tenantId} userId={context.userId} fullName={context.fullName || context.email || 'Employee'} role={portalRole} mode={activeSection as 'live-tracking' | 'profile' | 'mobile-app'} />
         : activeSection === 'external-links' && context.tenantId ? <AuditExternalLinksModule tenantId={context.tenantId} mode="external-links" isAdmin={isAdmin} />
         : activeSection === 'audit-log' && context.tenantId ? <AuditExternalLinksModule tenantId={context.tenantId} mode="audit-log" isAdmin={isAdmin} />
         : reportModes.has(activeSection) && context.tenantId ? <ReportsModule tenantId={context.tenantId} mode={activeSection as 'business-reports' | 'inventory-reports'} />
