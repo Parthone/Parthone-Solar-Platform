@@ -384,3 +384,96 @@ export const deleteExternalLink = onCall(async (request) => {
   await writeAudit({ tenantId, userId: request.auth.uid, userName: String(userData.fullName ?? 'Client Admin'), module: 'External Links', action: 'Delete Link', previousValue: `${data?.name ?? ''} · ${data?.url ?? ''}` })
   return { success: true }
 })
+
+export const saveClientBranding = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
+  const { tenantId, tenantData, userData } = await requireClientAdmin(request.auth.uid)
+  const companyName = String(request.data?.companyName ?? '').trim()
+  const email = String(request.data?.email ?? '').trim().toLowerCase()
+  const phone = String(request.data?.phone ?? '').trim()
+  const address = String(request.data?.address ?? '').trim()
+  const gstNumber = String(request.data?.gstNumber ?? '').trim().toUpperCase()
+  const logoUrl = String(request.data?.logoUrl ?? '').trim()
+  const primaryColor = String(request.data?.primaryColor ?? '#1769d2').trim()
+  const secondaryColor = String(request.data?.secondaryColor ?? '#0f243f').trim()
+  if (!companyName) throw new HttpsError('invalid-argument', 'Company name is required.')
+  if (!/^#[0-9a-f]{6}$/i.test(primaryColor) || !/^#[0-9a-f]{6}$/i.test(secondaryColor)) throw new HttpsError('invalid-argument', 'Brand colors must be valid hex colors.')
+  if (logoUrl && !/^https?:\/\//i.test(logoUrl)) throw new HttpsError('invalid-argument', 'Logo URL must start with http:// or https://.')
+
+  const tenantRef = adminDb.collection('tenants').doc(tenantId)
+  const publicRef = adminDb.collection('publicTenantBranding').doc(tenantId)
+  const batch = adminDb.batch()
+  batch.update(tenantRef, {
+    name: companyName,
+    email: email || null,
+    phone: phone || null,
+    address: address || null,
+    gstNumber: gstNumber || null,
+    branding: { logoUrl: logoUrl || null, primaryColor, secondaryColor },
+    updatedAt: FieldValue.serverTimestamp(),
+  })
+  batch.set(publicRef, {
+    tenantId,
+    companyName,
+    slug: tenantData.slug ?? '',
+    customDomain: tenantData.customDomain ?? null,
+    logoUrl: logoUrl || null,
+    primaryColor,
+    secondaryColor,
+    email: email || null,
+    phone: phone || null,
+    address: address || null,
+    gstNumber: gstNumber || null,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+  await batch.commit()
+  await writeAudit({ tenantId, userId: request.auth.uid, userName: String(userData.fullName ?? 'Client Admin'), module: 'Branding', action: 'Update Branding', previousValue: String(tenantData.name ?? ''), newValue: companyName })
+  return { success: true }
+})
+
+export const saveClientBankAccount = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
+  const { tenantId, userData } = await requireClientAdmin(request.auth.uid)
+  const id = String(request.data?.id ?? '').trim()
+  const accountLabel = String(request.data?.accountLabel ?? '').trim()
+  const accountHolderName = String(request.data?.accountHolderName ?? '').trim()
+  const bankName = String(request.data?.bankName ?? '').trim()
+  const accountNumber = String(request.data?.accountNumber ?? '').trim()
+  const ifscCode = String(request.data?.ifscCode ?? '').trim().toUpperCase()
+  const branchName = String(request.data?.branchName ?? '').trim()
+  const accountType = ['Current', 'Savings', 'OD', 'CC'].includes(String(request.data?.accountType)) ? String(request.data.accountType) : 'Current'
+  const upiId = String(request.data?.upiId ?? '').trim()
+  const isDefault = request.data?.isDefault === true
+  const isActive = request.data?.isActive !== false
+  if (!accountLabel || !accountHolderName || !bankName || !accountNumber || !ifscCode) throw new HttpsError('invalid-argument', 'Account label, holder, bank, account number and IFSC are required.')
+
+  const accounts = adminDb.collection('tenants').doc(tenantId).collection('bankAccounts')
+  const ref = id ? accounts.doc(id) : accounts.doc()
+  const previous = id ? await ref.get() : null
+  if (previous && !previous.exists) throw new HttpsError('not-found', 'Bank account not found.')
+
+  const batch = adminDb.batch()
+  if (isDefault) {
+    const existing = await accounts.where('isDefault', '==', true).get()
+    existing.docs.forEach((row) => { if (row.id !== ref.id) batch.update(row.ref, { isDefault: false, updatedAt: FieldValue.serverTimestamp() }) })
+  }
+  batch.set(ref, {
+    accountLabel,
+    accountHolderName,
+    bankName,
+    accountNumber,
+    ifscCode,
+    branchName: branchName || null,
+    accountType,
+    upiId: upiId || null,
+    isDefault: isDefault && isActive,
+    isActive,
+    createdAt: previous?.data()?.createdAt ?? FieldValue.serverTimestamp(),
+    createdBy: previous?.data()?.createdBy ?? request.auth.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: request.auth.uid,
+  }, { merge: true })
+  await batch.commit()
+  await writeAudit({ tenantId, userId: request.auth.uid, userName: String(userData.fullName ?? 'Client Admin'), module: 'Bank Accounts', action: id ? 'Update Bank Account' : 'Create Bank Account', previousValue: previous?.exists ? `${previous.data()?.accountLabel ?? ''} · ${previous.data()?.bankName ?? ''}` : null, newValue: `${accountLabel} · ${bankName} · ${isActive ? 'Active' : 'Inactive'}${isDefault ? ' · Default' : ''}` })
+  return { success: true, id: ref.id }
+})
