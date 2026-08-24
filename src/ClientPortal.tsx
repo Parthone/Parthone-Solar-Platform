@@ -31,6 +31,7 @@ import FinanceModule from './components/FinanceModule'
 import EmployeesModule from './components/EmployeesModule'
 import TrackingProfileModule from './components/TrackingProfileModule'
 import AuditExternalLinksModule from './components/AuditExternalLinksModule'
+import ReportsModule from './components/ReportsModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -55,6 +56,7 @@ const salesDocumentModes = new Set(['quotations', 'invoices', 'invoice-reports']
 const inventoryModes = new Set(['inventory-overview', 'purchases', 'panel-inventory', 'issues', 'reservations', 'movements', 'suppliers'])
 const financeModes = new Set(['expenses', 'expense-categories', 'account-statement-confirmation'])
 const trackingModes = new Set(['live-tracking', 'profile', 'mobile-app'])
+const reportModes = new Set(['business-reports', 'inventory-reports'])
 
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
@@ -65,7 +67,7 @@ export default function ClientPortal() {
   const [message, setMessage] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true, sales: true, inventory: true, finance: true, employees: true })
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true, sales: true, inventory: true, finance: true, employees: true, reports: true })
   const [activeSection, setActiveSection] = useState('dashboard')
 
   useEffect(() => {
@@ -159,6 +161,7 @@ export default function ClientPortal() {
         : trackingModes.has(activeSection) && context.tenantId ? <TrackingProfileModule tenantId={context.tenantId} userId={context.userId} fullName={context.fullName || context.email || 'Employee'} role={context.role === 'client_admin' ? 'client_admin' : 'employee'} mode={activeSection as 'live-tracking' | 'profile' | 'mobile-app'} />
         : activeSection === 'external-links' && context.tenantId ? <AuditExternalLinksModule tenantId={context.tenantId} mode="external-links" isAdmin={isAdmin} />
         : activeSection === 'audit-log' && context.tenantId ? <AuditExternalLinksModule tenantId={context.tenantId} mode="audit-log" isAdmin={isAdmin} />
+        : reportModes.has(activeSection) && context.tenantId ? <ReportsModule tenantId={context.tenantId} mode={activeSection as 'business-reports' | 'inventory-reports'} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
