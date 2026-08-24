@@ -27,6 +27,7 @@ import CustomerJourneyModule from './components/CustomerJourneyModule'
 import LeadsModule from './components/LeadsModule'
 import SalesDocumentsModule from './components/SalesDocumentsModule'
 import InventoryModule from './components/InventoryModule'
+import FinanceModule from './components/FinanceModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -49,6 +50,7 @@ const dashboardCards = [
 const customerModes = new Set(['journey-dashboard', 'customers', 'followups', 'sales-followups', 'pipeline'])
 const salesDocumentModes = new Set(['quotations', 'invoices', 'invoice-reports'])
 const inventoryModes = new Set(['inventory-overview', 'purchases', 'panel-inventory', 'issues', 'reservations', 'movements', 'suppliers'])
+const financeModes = new Set(['expenses', 'expense-categories', 'account-statement-confirmation'])
 
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
@@ -59,7 +61,7 @@ export default function ClientPortal() {
   const [message, setMessage] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true, sales: true, inventory: true })
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true, sales: true, inventory: true, finance: true })
   const [activeSection, setActiveSection] = useState('dashboard')
 
   useEffect(() => {
@@ -148,6 +150,7 @@ export default function ClientPortal() {
         : (activeSection === 'leads' || activeSection === 'add-lead') && context.tenantId ? <LeadsModule tenantId={context.tenantId} isAdmin={isAdmin} startInAddMode={activeSection === 'add-lead'} />
         : salesDocumentModes.has(activeSection) && context.tenantId ? <SalesDocumentsModule tenantId={context.tenantId} mode={activeSection as 'quotations' | 'invoices' | 'invoice-reports'} />
         : inventoryModes.has(activeSection) && context.tenantId ? <InventoryModule tenantId={context.tenantId} mode={activeSection as 'inventory-overview' | 'purchases' | 'panel-inventory' | 'issues' | 'reservations' | 'movements' | 'suppliers'} />
+        : financeModes.has(activeSection) && context.tenantId ? <FinanceModule tenantId={context.tenantId} mode={activeSection as 'expenses' | 'expense-categories' | 'account-statement-confirmation'} currentUserName={context.fullName} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
