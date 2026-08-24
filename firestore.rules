@@ -16,14 +16,18 @@ service cloud.firestore {
     function activeSameTenant(id) { return sameTenant(id) && tenantActive(id); }
 
     match /tenants/{tenantIdDoc} {
-      // Client users may read their tenant document so the app can show suspended/inactive status.
       allow read: if isSuperAdmin() || sameTenant(tenantIdDoc);
       allow create, update, delete: if isSuperAdmin();
 
       match /{document=**} {
-        // Business data is inaccessible when the tenant or plan is not active.
         allow read, write: if isSuperAdmin() || activeSameTenant(tenantIdDoc);
       }
+    }
+
+    // Safe public white-label metadata used before authentication.
+    match /publicTenantBranding/{tenantIdDoc} {
+      allow read: if true;
+      allow create, update, delete: if isSuperAdmin();
     }
 
     match /users/{userId} {
