@@ -29,7 +29,16 @@ service cloud.firestore {
       }
       match /leads/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'leads'); }
       match /quotations/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'quotations'); }
-      match /invoices/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'invoices'); }
+      match /invoices/{documentId} {
+        allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'invoices');
+        match /payments/{paymentId} {
+          allow read, create: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'invoices');
+          allow update, delete: if isSuperAdmin();
+        }
+      }
+      match /documentCounters/{counterId} {
+        allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'quotations') || moduleAllowed(tenantIdDoc, 'invoices');
+      }
       match /inventoryItems/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
       match /suppliers/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
       match /stockMovements/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
