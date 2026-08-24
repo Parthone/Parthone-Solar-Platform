@@ -1,22 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight,
-  CalendarCheck,
-  ChevronDown,
-  ChevronRight,
-  ClipboardList,
-  Hammer,
-  LogOut,
-  Menu,
-  PackageX,
-  ReceiptIndianRupee,
-  Search,
-  ShieldAlert,
-  SolarPanel,
-  UserPlus,
-  UserRound,
-  Wallet,
-  X,
+  ArrowRight, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Hammer, LogOut, Menu, PackageX,
+  ReceiptIndianRupee, Search, ShieldAlert, SolarPanel, UserPlus, UserRound, Wallet, X,
 } from 'lucide-react'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { auth } from './lib/firebase'
@@ -35,6 +20,7 @@ import AuditExternalLinksModule from './components/AuditExternalLinksModule'
 import ReportsModule from './components/ReportsModule'
 import SettingsModule from './components/SettingsModule'
 import PermissionsTargetsModule from './components/PermissionsTargetsModule'
+import ErpImportsModule from './components/ErpImportsModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -62,6 +48,7 @@ const trackingModes = new Set(['live-tracking', 'profile', 'mobile-app'])
 const reportModes = new Set(['business-reports', 'inventory-reports'])
 const settingsModes = new Set(['branding', 'bank-accounts', 'change-password'])
 const permissionsTargetModes = new Set(['roles-permissions', 'stage-targets', 'task-targets'])
+const erpImportModes = new Set(['erp-studio', 'master-data', 'imports'])
 
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
@@ -115,7 +102,6 @@ export default function ClientPortal() {
   }
 
   useEffect(() => onAuthStateChanged(auth, async () => { setLoading(true); await load() }), [])
-
   const navigation = useMemo(() => context ? visibleClientNavigation(context.role, context.role === 'employee' ? employeeModules : undefined) : [], [context, employeeModules])
 
   useEffect(() => {
@@ -129,11 +115,9 @@ export default function ClientPortal() {
     try { await signInWithEmailAndPassword(auth, email.trim(), password) }
     catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to sign in.') }
   }
-
   const logout = async () => signOut(auth)
 
   if (loading) return <div className="center-screen">Loading account…</div>
-
   if (!auth.currentUser || !context) {
     return <main className="auth-shell branded-auth"><section className="auth-card">
       {publicBranding.logoUrl ? <img className="tenant-logo" src={publicBranding.logoUrl} alt={publicBranding.companyName} /> : <div className="brand-mark"><SolarPanel size={28} /></div>}
@@ -181,6 +165,7 @@ export default function ClientPortal() {
         : reportModes.has(activeSection) && context.tenantId ? <ReportsModule tenantId={context.tenantId} mode={activeSection as 'business-reports' | 'inventory-reports'} />
         : settingsModes.has(activeSection) && context.tenantId ? <SettingsModule tenantId={context.tenantId} mode={activeSection as 'branding' | 'bank-accounts' | 'change-password'} isAdmin={isAdmin} currentBranding={{ companyName: context.tenantName || 'Solar Business Software', email: context.tenantEmail, phone: context.tenantPhone, address: context.tenantAddress, gstNumber: context.tenantGstNumber, logoUrl: context.logoUrl, primaryColor: context.primaryColor, secondaryColor: context.secondaryColor }} onBrandingSaved={() => void load()} />
         : permissionsTargetModes.has(activeSection) && context.tenantId ? <PermissionsTargetsModule tenantId={context.tenantId} mode={activeSection as 'roles-permissions' | 'stage-targets' | 'task-targets'} isAdmin={isAdmin} />
+        : erpImportModes.has(activeSection) && context.tenantId ? <ErpImportsModule tenantId={context.tenantId} mode={activeSection as 'erp-studio' | 'master-data' | 'imports'} isAdmin={isAdmin} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
