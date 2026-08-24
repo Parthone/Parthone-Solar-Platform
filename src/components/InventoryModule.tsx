@@ -1,176 +1,61 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, PackagePlus, Search, Truck, Undo2, UsersRound } from 'lucide-react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Boxes, PackagePlus, Search, Truck, Undo2, UsersRound, ScanLine, PackageCheck, ShieldAlert } from 'lucide-react'
 import '../inventory.css'
+import { fetchCustomers, type Customer } from '../lib/customers'
 import {
-  availableStock,
-  createInventoryItem,
-  createSupplier,
-  fetchInventoryItems,
-  fetchStockMovements,
-  fetchSuppliers,
-  inventorySummary,
-  recordStockMovement,
-  type InventoryItem,
-  type StockMovement,
-  type Supplier,
+  availableStock, createInventoryItem, createReservation, createSupplier, fetchInventoryItems, fetchInventorySerials,
+  fetchPurchaseBatches, fetchReservations, fetchStockMovements, fetchSuppliers, inventorySummary, issueReservation,
+  receivePurchase, recordStockMovement, releaseReservation, searchInventorySerials, updateSerialStatus,
+  type InventoryItem, type InventorySerial, type InventorySerialStatus, type PurchaseBatch, type Reservation,
+  type StockMovement, type Supplier,
 } from '../lib/inventory'
 
-type InventoryMode =
-  | 'inventory-overview'
-  | 'purchases'
-  | 'panel-inventory'
-  | 'issues'
-  | 'reservations'
-  | 'movements'
-  | 'suppliers'
+type InventoryMode='inventory-overview'|'purchases'|'panel-inventory'|'issues'|'reservations'|'movements'|'suppliers'
+type Props={tenantId:string;mode:InventoryMode}
+const money=(v:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(v||0)
+const blankItem={name:'',category:'Solar Panels',brand:'',model:'',unit:'Nos',reorderLevel:'0',minStock:'0',warehouseLocation:'',serialised:false}
+const today=()=>new Date().toISOString().slice(0,10)
 
-type Props = { tenantId: string; mode: InventoryMode }
+export default function InventoryModule({tenantId,mode}:Props){
+  const [items,setItems]=useState<InventoryItem[]>([]),[suppliers,setSuppliers]=useState<Supplier[]>([]),[movements,setMovements]=useState<StockMovement[]>([]),[batches,setBatches]=useState<PurchaseBatch[]>([]),[serials,setSerials]=useState<InventorySerial[]>([]),[reservations,setReservations]=useState<Reservation[]>([]),[customers,setCustomers]=useState<Customer[]>([])
+  const [loading,setLoading]=useState(true),[message,setMessage]=useState(''),[term,setTerm]=useState(''),[serialTerm,setSerialTerm]=useState(''),[serialResults,setSerialResults]=useState<InventorySerial[]>([])
+  const [showItem,setShowItem]=useState(false),[showSupplier,setShowSupplier]=useState(false),[showPurchase,setShowPurchase]=useState<InventoryItem|null>(null),[showReservation,setShowReservation]=useState<InventoryItem|null>(null)
+  const [itemForm,setItemForm]=useState(blankItem),[supplierForm,setSupplierForm]=useState({name:'',contactPerson:'',phone:'',email:'',gstNumber:'',address:''})
+  const [purchaseForm,setPurchaseForm]=useState({quantity:'1',unitPrice:'0',supplierId:'',purchaseInvoice:'',batchNumber:'',purchaseDate:today(),serials:'',note:''})
+  const [reservationForm,setReservationForm]=useState({customerId:'',quantity:'1',serials:'',note:''})
 
-function money(value: number) {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0)
+  const load=async()=>{setLoading(true);setMessage('');try{const [a,b,c,d,e,f,g]=await Promise.all([fetchInventoryItems(tenantId),fetchSuppliers(tenantId),fetchStockMovements(tenantId),fetchPurchaseBatches(tenantId).catch(()=>[]),fetchInventorySerials(tenantId).catch(()=>[]),fetchReservations(tenantId).catch(()=>[]),fetchCustomers(tenantId).catch(()=>[])]);setItems(a);setSuppliers(b);setMovements(c);setBatches(d);setSerials(e);setReservations(f);setCustomers(g)}catch(e){setMessage(e instanceof Error?e.message:'Unable to load inventory.')}finally{setLoading(false)}}
+  useEffect(()=>{void load()},[tenantId])
+
+  const filtered=useMemo(()=>items.filter(item=>{const q=term.trim().toLowerCase();const panelOnly=mode==='panel-inventory'?item.category.toLowerCase().includes('panel'):true;return panelOnly&&(!q||[item.itemCode,item.name,item.category,item.brand||'',item.model||''].some(v=>v.toLowerCase().includes(q)))}),[items,term,mode])
+  const summary=inventorySummary(items)
+
+  const createItem=async(e:FormEvent)=>{e.preventDefault();try{await createInventoryItem(tenantId,{name:itemForm.name.trim(),category:itemForm.category.trim()||'Other',brand:itemForm.brand.trim()||null,model:itemForm.model.trim()||null,unit:itemForm.unit.trim()||'Nos',reorderLevel:Number(itemForm.reorderLevel||0),minStock:Number(itemForm.minStock||0),warehouseLocation:itemForm.warehouseLocation.trim()||null,serialised:itemForm.serialised});setShowItem(false);setItemForm(blankItem);await load()}catch(e){setMessage(e instanceof Error?e.message:'Unable to create item.')}}
+  const createVendor=async(e:FormEvent)=>{e.preventDefault();try{await createSupplier(tenantId,{name:supplierForm.name.trim(),contactPerson:supplierForm.contactPerson.trim()||null,phone:supplierForm.phone.trim()||null,email:supplierForm.email.trim()||null,gstNumber:supplierForm.gstNumber.trim()||null,address:supplierForm.address.trim()||null});setShowSupplier(false);setSupplierForm({name:'',contactPerson:'',phone:'',email:'',gstNumber:'',address:''});await load()}catch(e){setMessage(e instanceof Error?e.message:'Unable to create supplier.')}}
+  const submitPurchase=async(e:FormEvent)=>{e.preventDefault();if(!showPurchase)return;const supplier=suppliers.find(s=>s.id===purchaseForm.supplierId);const list=purchaseForm.serials.split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean);try{await receivePurchase(tenantId,showPurchase,{quantity:Number(purchaseForm.quantity),unitPrice:Number(purchaseForm.unitPrice),supplierId:supplier?.id||null,supplierName:supplier?.name||null,purchaseInvoice:purchaseForm.purchaseInvoice||null,batchNumber:purchaseForm.batchNumber||null,purchaseDate:purchaseForm.purchaseDate,serialNumbers:list,note:purchaseForm.note||null});setShowPurchase(null);setPurchaseForm({quantity:'1',unitPrice:'0',supplierId:'',purchaseInvoice:'',batchNumber:'',purchaseDate:today(),serials:'',note:''});await load()}catch(e){setMessage(e instanceof Error?e.message:'Unable to receive purchase.')}}
+  const submitReservation=async(e:FormEvent)=>{e.preventDefault();if(!showReservation)return;const customer=customers.find(c=>c.id===reservationForm.customerId);if(!customer)return setMessage('Select a customer.');const serialList=reservationForm.serials.split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean);try{await createReservation(tenantId,showReservation,{customerId:customer.id,customerName:customer.name,quantity:Number(reservationForm.quantity),serialNumbers:serialList,note:reservationForm.note||null});setShowReservation(null);setReservationForm({customerId:'',quantity:'1',serials:'',note:''});await load()}catch(e){setMessage(e instanceof Error?e.message:'Unable to reserve stock.')}}
+  const simpleMovement=async(item:InventoryItem,type:'issue'|'return'|'damage'|'missing')=>{const qty=Number(window.prompt('Quantity:','1'));if(!Number.isFinite(qty)||qty<=0)return;const customerName=type==='issue'?window.prompt('Customer / installation reference:','')||null:null;const note=window.prompt('Note (optional):','')||null;try{await recordStockMovement(tenantId,item,{type,quantity:qty,customerName,reference:customerName,note});await load()}catch(e){setMessage(e instanceof Error?e.message:'Unable to update stock.')}}
+  const doSerialSearch=async()=>{try{setSerialResults(await searchInventorySerials(tenantId,serialTerm))}catch(e){setMessage(e instanceof Error?e.message:'Unable to search serials.')}}
+
+  if(mode==='suppliers')return <div className="module-stack"><div className="module-head"><div><h1>Suppliers</h1><p>{suppliers.length} supplier(s)</p></div><button className="primary tenant-primary" onClick={()=>setShowSupplier(true)}>+ Add Supplier</button></div>{message&&<div className="notice">{message}</div>}<div className="supplier-grid">{suppliers.map(s=><article className="panel supplier-card" key={s.id}><Truck size={20}/><h3>{s.name}</h3><p>{s.contactPerson||'No contact person'}</p><small>{s.phone||s.email||'No contact details'}</small>{s.gstNumber&&<small>GST: {s.gstNumber}</small>}</article>)}{!loading&&suppliers.length===0&&<section className="panel empty-state"><UsersRound size={28}/><h3>No suppliers yet</h3></section>}</div>{showSupplier&&<SupplierModal form={supplierForm} setForm={setSupplierForm} onSubmit={createVendor} onClose={()=>setShowSupplier(false)}/>}</div>
+
+  if(mode==='movements')return <div className="module-stack"><div className="module-head"><div><h1>Stock Movements</h1><p>Permanent stock-in / stock-out history.</p></div></div>{message&&<div className="notice">{message}</div>}<div className="table-wrap panel"><table><thead><tr><th>Item</th><th>Type</th><th>Qty</th><th>Customer/Supplier</th><th>Reference</th><th>Rate</th></tr></thead><tbody>{movements.map(m=><tr key={m.id}><td>{m.itemName}</td><td><span className="badge active">{m.type.replace('_',' ')}</span></td><td>{m.quantity}</td><td>{m.customerName||m.supplierName||'—'}</td><td>{m.purchaseInvoice||m.reference||m.batchNumber||'—'}</td><td>{money(m.unitPrice)}</td></tr>)}</tbody></table></div></div>
+
+  if(mode==='purchases')return <div className="module-stack"><div className="module-head"><div><h1>Purchase Batches</h1><p>Supplier, invoice, rate, batch and serial-level receipt tracking.</p></div></div>{message&&<div className="notice">{message}</div>}<div className="search-box"><Search size={17}/><input value={term} onChange={e=>setTerm(e.target.value)} placeholder="Search item to receive purchase"/></div><div className="inventory-list">{filtered.map(item=><article className="inventory-card" key={item.id}><div className="inventory-card-head"><div><PackagePlus size={19}/><span><strong>{item.name}</strong><small>{item.itemCode} · {item.serialised?'Serial tracked':'Quantity tracked'}</small></span></div><span className="stock-pill">{availableStock(item)} available</span></div><button className="primary tenant-primary" onClick={()=>setShowPurchase(item)}>Receive Purchase</button></article>)}</div><section className="panel"><h3>Recent Purchase Batches</h3><div className="table-wrap"><table><thead><tr><th>Batch</th><th>Item</th><th>Supplier</th><th>Invoice</th><th>Qty</th><th>Rate</th><th>Date</th></tr></thead><tbody>{batches.slice(0,50).map(b=><tr key={b.id}><td>{b.batchNumber}</td><td>{b.itemName}</td><td>{b.supplierName||'—'}</td><td>{b.purchaseInvoice||'—'}</td><td>{b.quantity}</td><td>{money(b.unitPrice)}</td><td>{b.purchaseDate}</td></tr>)}</tbody></table></div></section>{showPurchase&&<PurchaseModal item={showPurchase} suppliers={suppliers} form={purchaseForm} setForm={setPurchaseForm} onSubmit={submitPurchase} onClose={()=>setShowPurchase(null)}/>}</div>
+
+  if(mode==='reservations')return <div className="module-stack"><div className="module-head"><div><h1>Reservations</h1><p>Customer-wise reserved material before installation.</p></div></div>{message&&<div className="notice">{message}</div>}<div className="inventory-list">{items.map(item=><article className="inventory-card" key={item.id}><div className="inventory-card-head"><div><Boxes size={19}/><span><strong>{item.name}</strong><small>{availableStock(item)} available · {item.reservedStock} reserved</small></span></div><button className="primary tenant-primary" disabled={availableStock(item)<=0} onClick={()=>setShowReservation(item)}>Reserve</button></div></article>)}</div><section className="panel"><h3>Active & Past Reservations</h3><div className="reservation-list">{reservations.map(r=>{const item=items.find(i=>i.id===r.itemId);return <article key={r.id}><div><strong>{r.customerName}</strong><span>{r.itemName} · {r.quantity} units</span><small>{r.serialNumbers.length?`${r.serialNumbers.length} serials · `:''}{r.status}</small></div>{r.status==='active'&&item&&<div><button className="ghost" onClick={()=>void releaseReservation(tenantId,item,r).then(load).catch(e=>setMessage(e.message))}><Undo2 size={14}/> Release</button><button className="primary tenant-primary" onClick={()=>void issueReservation(tenantId,item,r).then(load).catch(e=>setMessage(e.message))}><PackageCheck size={14}/> Issue</button></div>}</article>})}</div></section>{showReservation&&<ReservationModal item={showReservation} customers={customers} serials={serials.filter(s=>s.itemId===showReservation.id&&s.status==='available')} form={reservationForm} setForm={setReservationForm} onSubmit={submitReservation} onClose={()=>setShowReservation(null)}/>}</div>
+
+  if(mode==='issues')return <div className="module-stack"><div className="module-head"><div><h1>Stock Issues / Exceptions</h1><p>Issue material and mark returns, damaged or missing stock.</p></div></div>{message&&<div className="notice">{message}</div>}<div className="inventory-list">{filtered.map(item=><article className="inventory-card" key={item.id}><div className="inventory-card-head"><div><Boxes size={19}/><span><strong>{item.name}</strong><small>{item.itemCode}</small></span></div><span className="stock-pill">{availableStock(item)} available</span></div><div className="inventory-grid"><span><small>Issued</small><strong>{item.issuedStock}</strong></span><span><small>Damaged</small><strong>{item.damagedStock}</strong></span><span><small>Missing</small><strong>{item.missingStock}</strong></span><span><small>Reserved</small><strong>{item.reservedStock}</strong></span></div><div className="inventory-actions"><button className="primary tenant-primary" onClick={()=>void simpleMovement(item,'issue')}>Issue Stock</button><button className="ghost" onClick={()=>void simpleMovement(item,'return')}>Return</button><button className="ghost" onClick={()=>void simpleMovement(item,'damage')}>Damaged</button><button className="ghost" onClick={()=>void simpleMovement(item,'missing')}>Missing</button></div></article>)}</div></div>
+
+  const title=mode==='panel-inventory'?'Panel Inventory':'Inventory Management'
+  return <div className="module-stack"><div className="module-head"><div><h1>{title}</h1><p>Commercial stock control with serial search and valuation.</p></div>{mode==='inventory-overview'&&<button className="primary tenant-primary" onClick={()=>setShowItem(true)}><PackagePlus size={16}/> New Item</button>}</div>{mode==='inventory-overview'&&<div className="inventory-stats"><article><span>Stock Value</span><strong>{money(summary.stockValue)}</strong></article><article><span>Items</span><strong>{summary.totalItems}</strong></article><article className={summary.lowStock.length?'warn':''}><span>Low Stock</span><strong>{summary.lowStock.length}</strong></article><article className={summary.outOfStock.length?'danger':''}><span>Out of Stock</span><strong>{summary.outOfStock.length}</strong></article><article><span>Reserved</span><strong>{summary.reservedUnits}</strong></article><article><span>Issued</span><strong>{summary.issuedUnits}</strong></article><article><span>Damaged</span><strong>{summary.damagedUnits}</strong></article></div>}
+    <div className="inventory-search-row"><div className="search-box"><Search size={17}/><input value={term} onChange={e=>setTerm(e.target.value)} placeholder="Search item, code, category, brand or model"/></div><div className="search-box"><ScanLine size={17}/><input value={serialTerm} onChange={e=>setSerialTerm(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void doSerialSearch()}} placeholder="Search serial number"/><button className="ghost" onClick={()=>void doSerialSearch()}>Search</button></div></div>
+    {message&&<div className="notice">{message}</div>}{summary.lowStock.length>0&&mode==='inventory-overview'&&<div className="inventory-alert"><AlertTriangle size={18}/><span>{summary.lowStock.length} item(s) are at/below reorder level.</span></div>}
+    {serialTerm&&<section className="panel serial-results"><h3>Serial Search</h3>{serialResults.map(s=><article key={s.id}><div><strong>{s.serialNumber}</strong><span>{s.itemName} · {s.batchNumber||'No batch'}</span><small>{s.customerName||s.supplierName||'Unassigned'}</small></div><select value={s.status} onChange={e=>void updateSerialStatus(tenantId,s,e.target.value as InventorySerialStatus).then(doSerialSearch).then(load)}>{['available','reserved','issued','damaged','missing','returned'].map(v=><option key={v}>{v}</option>)}</select></article>)}{serialResults.length===0&&<p className="muted">No matching serials.</p>}</section>}
+    <div className="inventory-list">{filtered.map(item=><article className="inventory-card" key={item.id}><div className="inventory-card-head"><div><Boxes size={19}/><span><strong>{item.name}</strong><small>{item.itemCode} · {item.category}{item.serialised?' · Serial tracked':''}</small></span></div><span className={availableStock(item)<=item.reorderLevel?'stock-pill low':'stock-pill'}>{availableStock(item)} {item.unit} available</span></div><div className="inventory-grid"><span><small>Total</small><strong>{item.currentStock}</strong></span><span><small>Reserved</small><strong>{item.reservedStock}</strong></span><span><small>Issued</small><strong>{item.issuedStock}</strong></span><span><small>Stock Value</small><strong>{money(item.currentStock*item.lastUnitPrice)}</strong></span></div><div className="inventory-actions"><button className="ghost" onClick={()=>setShowPurchase(item)}>+ Stock In</button><button className="ghost" onClick={()=>void simpleMovement(item,'issue')}>- Stock Out</button></div></article>)}</div>{showItem&&<ItemModal form={itemForm} setForm={setItemForm} onSubmit={createItem} onClose={()=>setShowItem(false)}/>} {showPurchase&&<PurchaseModal item={showPurchase} suppliers={suppliers} form={purchaseForm} setForm={setPurchaseForm} onSubmit={submitPurchase} onClose={()=>setShowPurchase(null)}/>}</div>
 }
 
-const blankItem = {
-  name: '', category: 'Solar Panels', brand: '', model: '', unit: 'Nos', reorderLevel: '0', minStock: '0', warehouseLocation: '', serialised: false,
-}
-
-export default function InventoryModule({ tenantId, mode }: Props) {
-  const [items, setItems] = useState<InventoryItem[]>([])
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [movements, setMovements] = useState<StockMovement[]>([])
-  const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState('')
-  const [term, setTerm] = useState('')
-  const [showItem, setShowItem] = useState(false)
-  const [showSupplier, setShowSupplier] = useState(false)
-  const [itemForm, setItemForm] = useState(blankItem)
-  const [supplierForm, setSupplierForm] = useState({ name: '', contactPerson: '', phone: '', email: '', gstNumber: '', address: '' })
-
-  const load = async () => {
-    setLoading(true)
-    setMessage('')
-    try {
-      const [stockRows, supplierRows, movementRows] = await Promise.all([
-        fetchInventoryItems(tenantId),
-        fetchSuppliers(tenantId),
-        fetchStockMovements(tenantId),
-      ])
-      setItems(stockRows)
-      setSuppliers(supplierRows)
-      setMovements(movementRows)
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to load inventory.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { void load() }, [tenantId])
-
-  const filtered = useMemo(() => items.filter((item) => {
-    const q = term.trim().toLowerCase()
-    const panelOnly = mode === 'panel-inventory' ? item.category.toLowerCase().includes('panel') : true
-    return panelOnly && (!q || [item.itemCode, item.name, item.category, item.brand || '', item.model || ''].some((value) => value.toLowerCase().includes(q)))
-  }), [items, term, mode])
-
-  const summary = inventorySummary(items)
-
-  const createItem = async (event: FormEvent) => {
-    event.preventDefault()
-    try {
-      await createInventoryItem(tenantId, {
-        name: itemForm.name.trim(),
-        category: itemForm.category.trim() || 'Other',
-        brand: itemForm.brand.trim() || null,
-        model: itemForm.model.trim() || null,
-        unit: itemForm.unit.trim() || 'Nos',
-        reorderLevel: Number(itemForm.reorderLevel || 0),
-        minStock: Number(itemForm.minStock || 0),
-        warehouseLocation: itemForm.warehouseLocation.trim() || null,
-        serialised: itemForm.serialised,
-      })
-      setShowItem(false)
-      setItemForm(blankItem)
-      await load()
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to create inventory item.')
-    }
-  }
-
-  const createVendor = async (event: FormEvent) => {
-    event.preventDefault()
-    try {
-      await createSupplier(tenantId, {
-        name: supplierForm.name.trim(),
-        contactPerson: supplierForm.contactPerson.trim() || null,
-        phone: supplierForm.phone.trim() || null,
-        email: supplierForm.email.trim() || null,
-        gstNumber: supplierForm.gstNumber.trim() || null,
-        address: supplierForm.address.trim() || null,
-      })
-      setShowSupplier(false)
-      setSupplierForm({ name: '', contactPerson: '', phone: '', email: '', gstNumber: '', address: '' })
-      await load()
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to create supplier.')
-    }
-  }
-
-  const transact = async (item: InventoryItem, type: StockMovement['type']) => {
-    const qtyRaw = window.prompt(type === 'reservation_release' ? 'Release quantity:' : 'Quantity:', '1')
-    if (qtyRaw === null) return
-    const quantity = Number(qtyRaw)
-    if (!Number.isFinite(quantity) || quantity <= 0) return setMessage('Enter a valid quantity.')
-
-    let unitPrice = 0
-    if (type === 'purchase') {
-      const priceRaw = window.prompt('Unit purchase price:', String(item.lastUnitPrice || 0))
-      if (priceRaw === null) return
-      unitPrice = Number(priceRaw)
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) return setMessage('Enter a valid price.')
-    }
-
-    const reference = window.prompt('Reference / customer / note (optional):', '')
-    try {
-      await recordStockMovement(tenantId, item, {
-        type,
-        quantity,
-        unitPrice,
-        reference: reference?.trim() || null,
-        customerName: type === 'issue' || type === 'reservation' ? reference?.trim() || null : null,
-      })
-      await load()
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to update stock.')
-    }
-  }
-
-  if (mode === 'suppliers') {
-    return <div className="module-stack"><div className="module-head"><div><h1>Suppliers</h1><p>{suppliers.length} supplier(s)</p></div><button className="primary tenant-primary" onClick={() => setShowSupplier(true)}>+ Add Supplier</button></div>{message && <div className="notice">{message}</div>}<div className="supplier-grid">{suppliers.map((supplier) => <article className="panel supplier-card" key={supplier.id}><Truck size={20}/><h3>{supplier.name}</h3><p>{supplier.contactPerson || 'No contact person'}</p><small>{supplier.phone || supplier.email || 'No contact details'}</small>{supplier.gstNumber && <small>GST: {supplier.gstNumber}</small>}</article>)}{!loading && suppliers.length === 0 && <section className="panel empty-state"><UsersRound size={28}/><h3>No suppliers yet</h3></section>}</div>{showSupplier && <SupplierModal form={supplierForm} setForm={setSupplierForm} onSubmit={createVendor} onClose={() => setShowSupplier(false)} />}</div>
-  }
-
-  if (mode === 'movements') {
-    return <div className="module-stack"><div className="module-head"><div><h1>Stock Movements</h1><p>Permanent movement history for this tenant.</p></div></div>{message && <div className="notice">{message}</div>}<div className="table-wrap panel"><table><thead><tr><th>Item</th><th>Type</th><th>Qty</th><th>Reference</th><th>Rate</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id}><td>{movement.itemName}</td><td><span className="badge active">{movement.type.replace('_', ' ')}</span></td><td>{movement.quantity}</td><td>{movement.reference || '—'}</td><td>{money(movement.unitPrice)}</td></tr>)}</tbody></table>{!loading && movements.length === 0 && <p className="empty">No movements recorded yet.</p>}</div></div>
-  }
-
-  const title = mode === 'purchases' ? 'Purchases' : mode === 'panel-inventory' ? 'Panel Inventory' : mode === 'issues' ? 'Stock Issues' : mode === 'reservations' ? 'Reservations' : 'Inventory Management'
-  const subtitle = mode === 'purchases' ? 'Receive purchased stock into inventory.' : mode === 'issues' ? 'Issue available material to customers or installation teams.' : mode === 'reservations' ? 'Reserve available stock before installation.' : 'Purchase to installation — every movement is recorded.'
-
-  return <div className="module-stack">
-    <div className="module-head"><div><h1>{title}</h1><p>{subtitle}</p></div>{mode === 'inventory-overview' && <button className="primary tenant-primary" onClick={() => setShowItem(true)}><PackagePlus size={16}/> New Item</button>}</div>
-    {mode === 'inventory-overview' && <div className="inventory-stats"><article><span>Stock Value</span><strong>{money(summary.stockValue)}</strong></article><article><span>Items Tracked</span><strong>{summary.totalItems}</strong></article><article className={summary.lowStock.length ? 'warn' : ''}><span>Low Stock</span><strong>{summary.lowStock.length}</strong></article><article className={summary.outOfStock.length ? 'danger' : ''}><span>Out of Stock</span><strong>{summary.outOfStock.length}</strong></article><article><span>Reserved Units</span><strong>{summary.reservedUnits}</strong></article></div>}
-    <div className="search-box"><Search size={17}/><input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Search item, code, category, brand or model" /></div>
-    {message && <div className="notice">{message}</div>}
-    {summary.lowStock.length > 0 && mode === 'inventory-overview' && <div className="inventory-alert"><AlertTriangle size={18}/><span>{summary.lowStock.length} item(s) are at or below reorder level.</span></div>}
-    <div className="inventory-list">{filtered.map((item) => <article className="inventory-card" key={item.id}><div className="inventory-card-head"><div><Boxes size={19}/><span><strong>{item.name}</strong><small>{item.itemCode} · {item.category}</small></span></div><span className={availableStock(item) <= item.reorderLevel ? 'stock-pill low' : 'stock-pill'}>{availableStock(item)} {item.unit} available</span></div><div className="inventory-grid"><span><small>Total Stock</small><strong>{item.currentStock}</strong></span><span><small>Reserved</small><strong>{item.reservedStock}</strong></span><span><small>Reorder At</small><strong>{item.reorderLevel}</strong></span><span><small>Last Rate</small><strong>{money(item.lastUnitPrice)}</strong></span></div><div className="inventory-actions">{mode === 'purchases' && <button className="primary tenant-primary" onClick={() => void transact(item, 'purchase')}>Receive Purchase</button>}{mode === 'issues' && <button className="primary tenant-primary" onClick={() => void transact(item, 'issue')}>Issue Stock</button>}{mode === 'reservations' && <><button className="primary tenant-primary" onClick={() => void transact(item, 'reservation')}>Reserve</button><button className="ghost" onClick={() => void transact(item, 'reservation_release')}><Undo2 size={15}/> Release</button></>}{mode === 'inventory-overview' && <><button className="ghost" onClick={() => void transact(item, 'purchase')}>+ Stock In</button><button className="ghost" onClick={() => void transact(item, 'issue')}>- Stock Out</button></>}</div></article>)}{!loading && filtered.length === 0 && <section className="panel empty-state"><Boxes size={28}/><h3>No inventory items found</h3><p className="muted">Add an item or change the search.</p></section>}</div>
-    {showItem && <ItemModal form={itemForm} setForm={setItemForm} onSubmit={createItem} onClose={() => setShowItem(false)} />}
-  </div>
-}
-
-function ItemModal({ form, setForm, onSubmit, onClose }: { form: typeof blankItem; setForm: (value: typeof blankItem) => void; onSubmit: (event: FormEvent) => void; onClose: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal" onMouseDown={(e) => e.stopPropagation()}><div className="panel-title"><div><p className="eyebrow">INVENTORY MASTER</p><h2>Add Inventory Item</h2></div><button className="ghost" onClick={onClose}>Close</button></div><form className="form-grid" onSubmit={onSubmit}><label>Item name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label><label>Category<input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required /></label><label>Brand<input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></label><label>Model<input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} /></label><label>Unit<input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} /></label><label>Reorder level<input type="number" value={form.reorderLevel} onChange={(e) => setForm({ ...form, reorderLevel: e.target.value })} /></label><label>Minimum stock<input type="number" value={form.minStock} onChange={(e) => setForm({ ...form, minStock: e.target.value })} /></label><label>Warehouse / rack<input value={form.warehouseLocation} onChange={(e) => setForm({ ...form, warehouseLocation: e.target.value })} /></label><label className="full-field checkbox-row"><input type="checkbox" checked={form.serialised} onChange={(e) => setForm({ ...form, serialised: e.target.checked })} /> Serial-number tracking</label><div className="form-actions"><button type="button" className="ghost" onClick={onClose}>Cancel</button><button className="primary tenant-primary">Save Item</button></div></form></section></div>
-}
-
-function SupplierModal({ form, setForm, onSubmit, onClose }: { form: { name: string; contactPerson: string; phone: string; email: string; gstNumber: string; address: string }; setForm: (value: { name: string; contactPerson: string; phone: string; email: string; gstNumber: string; address: string }) => void; onSubmit: (event: FormEvent) => void; onClose: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal" onMouseDown={(e) => e.stopPropagation()}><div className="panel-title"><h2>Add Supplier</h2><button className="ghost" onClick={onClose}>Close</button></div><form className="form-grid" onSubmit={onSubmit}><label>Supplier name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label><label>Contact person<input value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} /></label><label>Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>GST number<input value={form.gstNumber} onChange={(e) => setForm({ ...form, gstNumber: e.target.value })} /></label><label className="full-field">Address<textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label><div className="form-actions"><button type="button" className="ghost" onClick={onClose}>Cancel</button><button className="primary tenant-primary">Save Supplier</button></div></form></section></div>
-}
+function ItemModal({form,setForm,onSubmit,onClose}:{form:typeof blankItem;setForm:(v:typeof blankItem)=>void;onSubmit:(e:FormEvent)=>void;onClose:()=>void}){return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="panel-title"><h2>Add Inventory Item</h2><button className="ghost" onClick={onClose}>Close</button></div><form className="form-grid" onSubmit={onSubmit}><label>Item name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/></label><label>Category<input value={form.category} onChange={e=>setForm({...form,category:e.target.value})} required/></label><label>Brand<input value={form.brand} onChange={e=>setForm({...form,brand:e.target.value})}/></label><label>Model<input value={form.model} onChange={e=>setForm({...form,model:e.target.value})}/></label><label>Unit<input value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}/></label><label>Reorder level<input type="number" value={form.reorderLevel} onChange={e=>setForm({...form,reorderLevel:e.target.value})}/></label><label>Minimum stock<input type="number" value={form.minStock} onChange={e=>setForm({...form,minStock:e.target.value})}/></label><label>Warehouse / rack<input value={form.warehouseLocation} onChange={e=>setForm({...form,warehouseLocation:e.target.value})}/></label><label className="full-field checkbox-row"><input type="checkbox" checked={form.serialised} onChange={e=>setForm({...form,serialised:e.target.checked})}/> Serial-number tracking</label><div className="form-actions"><button type="button" className="ghost" onClick={onClose}>Cancel</button><button className="primary tenant-primary">Save Item</button></div></form></section></div>}
+function SupplierModal({form,setForm,onSubmit,onClose}:{form:any;setForm:(v:any)=>void;onSubmit:(e:FormEvent)=>void;onClose:()=>void}){return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="panel-title"><h2>Add Supplier</h2><button className="ghost" onClick={onClose}>Close</button></div><form className="form-grid" onSubmit={onSubmit}><label>Supplier name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/></label><label>Contact person<input value={form.contactPerson} onChange={e=>setForm({...form,contactPerson:e.target.value})}/></label><label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></label><label>Email<input value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>GST number<input value={form.gstNumber} onChange={e=>setForm({...form,gstNumber:e.target.value})}/></label><label className="full-field">Address<textarea value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></label><div className="form-actions"><button type="button" className="ghost" onClick={onClose}>Cancel</button><button className="primary tenant-primary">Save Supplier</button></div></form></section></div>}
+function PurchaseModal({item,suppliers,form,setForm,onSubmit,onClose}:{item:InventoryItem;suppliers:Supplier[];form:any;setForm:(v:any)=>void;onSubmit:(e:FormEvent)=>void;onClose:()=>void}){return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal commercial-modal" onMouseDown={e=>e.stopPropagation()}><div className="panel-title"><div><p className="eyebrow">PURCHASE RECEIPT</p><h2>{item.name}</h2></div><button className="ghost" onClick={onClose}>Close</button></div><form className="form-grid" onSubmit={onSubmit}><label>Quantity<input type="number" min="1" value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})} required/></label><label>Unit Price<input type="number" min="0" step="0.01" value={form.unitPrice} onChange={e=>setForm({...form,unitPrice:e.target.value})} required/></label><label>Supplier<select value={form.supplierId} onChange={e=>setForm({...form,supplierId:e.target.value})}><option value="">No supplier</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>Purchase Invoice<input value={form.purchaseInvoice} onChange={e=>setForm({...form,purchaseInvoice:e.target.value})}/></label><label>Batch Number<input value={form.batchNumber} onChange={e=>setForm({...form,batchNumber:e.target.value})} placeholder="Auto if blank"/></label><label>Purchase Date<input type="date" value={form.purchaseDate} onChange={e=>setForm({...form,purchaseDate:e.target.value})}/></label>{item.serialised&&<label className="full-field">Serial Numbers<textarea rows={7} value={form.serials} onChange={e=>setForm({...form,serials:e.target.value})} placeholder="One serial per line. Count must match quantity."/></label>}<label className="full-field">Note<textarea value={form.note} onChange={e=>setForm({...form,note:e.target.value})}/></label><div className="form-actions"><button type="button" className="ghost" onClick={onClose}>Cancel</button><button className="primary tenant-primary">Receive Stock</button></div></form></section></div>}
+function ReservationModal({item,customers,serials,form,setForm,onSubmit,onClose}:{item:InventoryItem;customers:Customer[];serials:InventorySerial[];form:any;setForm:(v:any)=>void;onSubmit:(e:FormEvent)=>void;onClose:()=>void}){return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="panel-title"><div><p className="eyebrow">CUSTOMER RESERVATION</p><h2>{item.name}</h2></div><button className="ghost" onClick={onClose}>Close</button></div><form className="form-grid" onSubmit={onSubmit}><label>Customer<select value={form.customerId} onChange={e=>setForm({...form,customerId:e.target.value})} required><option value="">Select customer</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name} · {c.customerId}</option>)}</select></label><label>Quantity<input type="number" min="1" max={availableStock(item)} value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})} required/></label>{item.serialised&&<label className="full-field">Serial Numbers<textarea rows={6} value={form.serials} onChange={e=>setForm({...form,serials:e.target.value})} placeholder={serials.slice(0,8).map(s=>s.serialNumber).join('\n')}/><small>{serials.length} available serial(s)</small></label>}<label className="full-field">Note<textarea value={form.note} onChange={e=>setForm({...form,note:e.target.value})}/></label><div className="form-actions"><button type="button" className="ghost" onClick={onClose}>Cancel</button><button className="primary tenant-primary">Reserve Stock</button></div></form></section></div>}
