@@ -28,12 +28,17 @@ type Profile = {
 }
 
 const emptyTenant = {
-  name: '',
+  companyName: '',
   slug: '',
-  email: '',
+  companyEmail: '',
   phone: '',
-  custom_domain: '',
-  plan_name: 'standard',
+  customDomain: '',
+  planName: 'standard',
+  logoUrl: '',
+  primaryColor: '#2563eb',
+  adminName: '',
+  adminEmail: '',
+  adminPassword: '',
 }
 
 export default function App() {
@@ -47,6 +52,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [newTenant, setNewTenant] = useState(emptyTenant)
+  const [creating, setCreating] = useState(false)
 
   const loadAdminData = async () => {
     setLoading(true)
@@ -101,22 +107,22 @@ export default function App() {
     if (error) setMessage(error.message)
   }
 
-  const addTenant = async (event: FormEvent) => {
+  const onboardTenant = async (event: FormEvent) => {
     event.preventDefault()
     setMessage('')
-    const payload = {
-      name: newTenant.name.trim(),
-      slug: newTenant.slug.trim().toLowerCase(),
-      email: newTenant.email.trim() || null,
-      phone: newTenant.phone.trim() || null,
-      custom_domain: newTenant.custom_domain.trim() || null,
-      plan_name: newTenant.plan_name.trim() || 'standard',
-      status: 'active' as TenantStatus,
-    }
-    const { error } = await supabase.from('tenants').insert(payload)
+    setCreating(true)
+
+    const { data, error } = await supabase.functions.invoke('onboard-client', {
+      body: newTenant,
+    })
+
+    setCreating(false)
     if (error) return setMessage(error.message)
+    if (data?.error) return setMessage(data.error)
+
     setNewTenant(emptyTenant)
     setShowAdd(false)
+    setMessage(`Client ${data.tenant.name} onboarded successfully.`)
     await loadAdminData()
   }
 
@@ -130,9 +136,7 @@ export default function App() {
     await supabase.auth.signOut()
   }
 
-  if (loading && !sessionReady) {
-    return <div className="center-screen">Loading platform…</div>
-  }
+  if (loading && !sessionReady) return <div className="center-screen">Loading platform…</div>
 
   if (!sessionReady) {
     return (
@@ -185,7 +189,7 @@ export default function App() {
           <div><p className="eyebrow">SUPER ADMIN</p><h1>Solar Clients</h1></div>
           <div className="top-actions">
             <button className="ghost" onClick={loadAdminData}><RefreshCw size={17} /> Refresh</button>
-            <button className="primary" onClick={() => setShowAdd(true)}><Plus size={17} /> Add Client</button>
+            <button className="primary" onClick={() => setShowAdd(true)}><Plus size={17} /> Onboard Client</button>
           </div>
         </header>
 
@@ -229,15 +233,20 @@ export default function App() {
       {showAdd && (
         <div className="modal-backdrop" onMouseDown={() => setShowAdd(false)}>
           <section className="modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="panel-title"><div><p className="eyebrow">NEW TENANT</p><h2>Add Solar Client</h2></div><button className="ghost" onClick={() => setShowAdd(false)}>Close</button></div>
-            <form onSubmit={addTenant} className="form-grid">
-              <label>Company name<input value={newTenant.name} onChange={(e) => setNewTenant({ ...newTenant, name: e.target.value })} required /></label>
+            <div className="panel-title"><div><p className="eyebrow">MODULE 2</p><h2>Onboard Solar Client</h2></div><button className="ghost" onClick={() => setShowAdd(false)}>Close</button></div>
+            <form onSubmit={onboardTenant} className="form-grid">
+              <label>Company name<input value={newTenant.companyName} onChange={(e) => setNewTenant({ ...newTenant, companyName: e.target.value })} required /></label>
               <label>Slug<input value={newTenant.slug} onChange={(e) => setNewTenant({ ...newTenant, slug: e.target.value })} placeholder="supreme-solar" required /></label>
-              <label>Email<input type="email" value={newTenant.email} onChange={(e) => setNewTenant({ ...newTenant, email: e.target.value })} /></label>
+              <label>Company email<input type="email" value={newTenant.companyEmail} onChange={(e) => setNewTenant({ ...newTenant, companyEmail: e.target.value })} /></label>
               <label>Phone<input value={newTenant.phone} onChange={(e) => setNewTenant({ ...newTenant, phone: e.target.value })} /></label>
-              <label>Custom domain<input value={newTenant.custom_domain} onChange={(e) => setNewTenant({ ...newTenant, custom_domain: e.target.value })} placeholder="crm.client.com" /></label>
-              <label>Plan<input value={newTenant.plan_name} onChange={(e) => setNewTenant({ ...newTenant, plan_name: e.target.value })} /></label>
-              <div className="form-actions"><button type="button" className="ghost" onClick={() => setShowAdd(false)}>Cancel</button><button className="primary" type="submit">Create Client</button></div>
+              <label>Custom domain<input value={newTenant.customDomain} onChange={(e) => setNewTenant({ ...newTenant, customDomain: e.target.value })} placeholder="crm.client.com" /></label>
+              <label>Plan<input value={newTenant.planName} onChange={(e) => setNewTenant({ ...newTenant, planName: e.target.value })} /></label>
+              <label>Logo URL<input value={newTenant.logoUrl} onChange={(e) => setNewTenant({ ...newTenant, logoUrl: e.target.value })} /></label>
+              <label>Primary color<input type="color" value={newTenant.primaryColor} onChange={(e) => setNewTenant({ ...newTenant, primaryColor: e.target.value })} /></label>
+              <label>First admin name<input value={newTenant.adminName} onChange={(e) => setNewTenant({ ...newTenant, adminName: e.target.value })} required /></label>
+              <label>First admin email<input type="email" value={newTenant.adminEmail} onChange={(e) => setNewTenant({ ...newTenant, adminEmail: e.target.value })} required /></label>
+              <label>Temporary password<input type="password" minLength={8} value={newTenant.adminPassword} onChange={(e) => setNewTenant({ ...newTenant, adminPassword: e.target.value })} required /></label>
+              <div className="form-actions"><button type="button" className="ghost" onClick={() => setShowAdd(false)}>Cancel</button><button className="primary" type="submit" disabled={creating}>{creating ? 'Creating…' : 'Create Client + Admin'}</button></div>
             </form>
           </section>
         </div>
