@@ -8,6 +8,7 @@ import {
   type AuditLog,
   type ExternalLink,
 } from '../lib/audit-external-links'
+import './audit-external-links.css'
 
 type Props = { tenantId: string; mode: 'audit-log' | 'external-links'; isAdmin: boolean }
 
