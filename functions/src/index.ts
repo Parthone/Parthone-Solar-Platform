@@ -16,6 +16,24 @@ async function requireSuperAdmin(uid: string) {
   }
 }
 
+async function requireClientAdmin(uid: string) {
+  const snapshot = await adminDb.collection('users').doc(uid).get()
+  const data = snapshot.data()
+  if (!snapshot.exists || data?.role !== 'client_admin' || data?.isActive === false || !data?.tenantId) {
+    throw new HttpsError('permission-denied', 'Client Admin access required.')
+  }
+  const tenant = await adminDb.collection('tenants').doc(data.tenantId).get()
+  const tenantData = tenant.data()
+  if (!tenant.exists || tenantData?.status !== 'active' || tenantData?.planStatus === 'inactive') {
+    throw new HttpsError('failed-precondition', 'Company access is not active.')
+  }
+  return { tenantId: String(data.tenantId), tenantData: tenantData ?? {} }
+}
+
+function employeeRole(value: unknown): 'client_admin' | 'employee' {
+  return value === 'client_admin' ? 'client_admin' : 'employee'
+}
+
 export const platformHealth = onCall((request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
   return { ok: true, uid: request.auth.uid }
@@ -167,4 +185,126 @@ export const onboardClient = onCall(async (request) => {
     console.error('onboardClient failed', error)
     throw new HttpsError('internal', 'Unable to onboard client.')
   }
+})
+
+export const createClientUser = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
+  const { tenantId, tenantData } = await requireClientAdmin(request.auth.uid)
+
+  const fullName = String(request.data?.fullName ?? '').trim()
+  const email = String(request.data?.email ?? '').trim().toLowerCase()
+  const password = String(request.data?.password ?? '')
+  const mobile = String(request.data?.mobile ?? '').trim()
+  const designation = String(request.data?.designation ?? '').trim()
+  const role = employeeRole(request.data?.role)
+
+  if (!fullName || !email || password.length < 8) throw new HttpsError('invalid-argument', 'Name, email and an 8+ character password are required.')
+
+  const userLimit = Number(tenantData?.userLimit ?? 0)
+  if (Number.isFinite(userLimit) && userLimit > 0) {
+    const existingUsers = await adminDb.collection('users').where('tenantId', '==', tenantId).get()
+    if (existingUsers.size >= userLimit) throw new HttpsError('resource-exhausted', `User limit reached (${userLimit}).`)
+  }
+
+  try {
+    await adminAuth.getUserByEmail(email)
+    throw new HttpsError('already-exists', 'This email already has an account.')
+  } catch (error: any) {
+    if (error instanceof HttpsError) throw error
+    if (error?.code !== 'auth/user-not-found') throw error
+  }
+
+  let createdUser: Awaited<ReturnType<typeof adminAuth.createUser>> | null = null
+  try {
+    createdUser = await adminAuth.createUser({ email, password, displayName: fullName, disabled: false })
+    await adminDb.collection('users').doc(createdUser.uid).set({
+      tenantId,
+      fullName,
+      email,
+      mobile: mobile || null,
+      designation: designation || null,
+      role,
+      isActive: true,
+      createdBy: request.auth.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+    return { success: true, uid: createdUser.uid }
+  } catch (error) {
+    if (createdUser) {
+      try { await adminAuth.deleteUser(createdUser.uid) } catch { /* best-effort rollback */ }
+    }
+    if (error instanceof HttpsError) throw error
+    console.error('createClientUser failed', error)
+    throw new HttpsError('internal', 'Unable to create employee.')
+  }
+})
+
+export const updateClientUser = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
+  const { tenantId } = await requireClientAdmin(request.auth.uid)
+  const uid = String(request.data?.uid ?? '').trim()
+  if (!uid) throw new HttpsError('invalid-argument', 'User ID is required.')
+
+  const targetRef = adminDb.collection('users').doc(uid)
+  const targetSnapshot = await targetRef.get()
+  const target = targetSnapshot.data()
+  if (!targetSnapshot.exists || target?.tenantId !== tenantId || target?.role === 'parthone_super_admin') {
+    throw new HttpsError('not-found', 'Employee not found in your company.')
+  }
+
+  const fullName = String(request.data?.fullName ?? target.fullName ?? '').trim()
+  const mobile = String(request.data?.mobile ?? '').trim()
+  const designation = String(request.data?.designation ?? '').trim()
+  const role = employeeRole(request.data?.role ?? target.role)
+  const isActive = request.data?.isActive !== false
+
+  if (!fullName) throw new HttpsError('invalid-argument', 'Full name is required.')
+  if (uid === request.auth.uid && (!isActive || role !== 'client_admin')) {
+    throw new HttpsError('failed-precondition', 'You cannot deactivate or remove your own Client Admin role here.')
+  }
+
+  if (target.role === 'client_admin' && (!isActive || role !== 'client_admin')) {
+    const admins = await adminDb.collection('users')
+      .where('tenantId', '==', tenantId)
+      .where('role', '==', 'client_admin')
+      .where('isActive', '==', true)
+      .get()
+    if (admins.docs.filter((row) => row.id !== uid).length === 0) {
+      throw new HttpsError('failed-precondition', 'At least one active Client Admin must remain.')
+    }
+  }
+
+  await Promise.all([
+    adminAuth.updateUser(uid, { displayName: fullName, disabled: !isActive }),
+    targetRef.update({
+      fullName,
+      mobile: mobile || null,
+      designation: designation || null,
+      role,
+      isActive,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: request.auth.uid,
+    }),
+  ])
+
+  return { success: true }
+})
+
+export const resetClientUserPassword = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.')
+  const { tenantId } = await requireClientAdmin(request.auth.uid)
+  const uid = String(request.data?.uid ?? '').trim()
+  const password = String(request.data?.password ?? '')
+  if (!uid || password.length < 8) throw new HttpsError('invalid-argument', 'User and an 8+ character password are required.')
+
+  const target = await adminDb.collection('users').doc(uid).get()
+  const data = target.data()
+  if (!target.exists || data?.tenantId !== tenantId || data?.role === 'parthone_super_admin') {
+    throw new HttpsError('not-found', 'Employee not found in your company.')
+  }
+
+  await adminAuth.updateUser(uid, { password })
+  await target.ref.update({ passwordResetAt: FieldValue.serverTimestamp(), passwordResetBy: request.auth.uid, updatedAt: FieldValue.serverTimestamp() })
+  return { success: true }
 })
