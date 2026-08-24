@@ -24,7 +24,6 @@ service cloud.firestore {
       }
     }
 
-    // Safe public white-label metadata used before authentication.
     match /publicTenantBranding/{tenantIdDoc} {
       allow read: if true;
       allow create, update, delete: if isSuperAdmin();
@@ -33,21 +32,15 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSuperAdmin() ||
         (signedIn() && request.auth.uid == userId) ||
-        (isClientAdmin() && activeSameTenant(resource.data.tenantId) && resource.data.tenantId == tenantId());
+        (isClientAdmin() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
 
-      allow create: if isSuperAdmin() ||
-        (isClientAdmin() && activeSameTenant(request.resource.data.tenantId) &&
-         request.resource.data.tenantId == tenantId() &&
-         request.resource.data.role != 'parthone_super_admin');
-
+      allow create, delete: if isSuperAdmin();
       allow update: if isSuperAdmin() ||
-        (isClientAdmin() && activeSameTenant(resource.data.tenantId) &&
-         resource.data.tenantId == tenantId() &&
-         request.resource.data.tenantId == tenantId() &&
-         request.resource.data.role != 'parthone_super_admin');
-
-      allow delete: if isSuperAdmin() ||
-        (isClientAdmin() && activeSameTenant(resource.data.tenantId) && resource.data.tenantId == tenantId());
+        (signedIn() && request.auth.uid == userId &&
+         request.resource.data.tenantId == resource.data.tenantId &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.isActive == resource.data.isActive &&
+         request.resource.data.email == resource.data.email);
     }
 
     match /platform/{document=**} {
