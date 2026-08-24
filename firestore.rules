@@ -43,6 +43,26 @@ service cloud.firestore {
          request.resource.data.email == resource.data.email);
     }
 
+    match /employeeTracking/{trackingId} {
+      allow read: if isSuperAdmin() ||
+        (isClientAdmin() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId)) ||
+        (signedIn() && request.auth.uid == resource.data.userId && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
+
+      allow create: if signedIn() && userActive() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.tenantId == tenantId() &&
+        activeSameTenant(request.resource.data.tenantId);
+
+      allow update: if signedIn() && userActive() &&
+        resource.data.userId == request.auth.uid &&
+        resource.data.tenantId == tenantId() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.tenantId == tenantId() &&
+        activeSameTenant(request.resource.data.tenantId);
+
+      allow delete: if isSuperAdmin();
+    }
+
     match /platform/{document=**} {
       allow read, write: if isSuperAdmin();
     }
