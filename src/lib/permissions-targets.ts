@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, orderBy, query, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 
@@ -35,8 +35,10 @@ export async function savePermissionSettings(employeeModules: EmployeeModuleKey[
 }
 
 export async function fetchTargets(tenantId: string, kind: 'stage' | 'task'): Promise<Target[]> {
-  const snapshot = await getDocs(query(collection(db, 'tenants', tenantId, 'targets'), where('kind', '==', kind), orderBy('period', 'desc')))
-  return snapshot.docs.map((row) => ({ id: row.id, ...(row.data() as Omit<Target, 'id'>) }))
+  const snapshot = await getDocs(query(collection(db, 'tenants', tenantId, 'targets'), where('kind', '==', kind)))
+  return snapshot.docs
+    .map((row) => ({ id: row.id, ...(row.data() as Omit<Target, 'id'>) }))
+    .sort((a, b) => b.period.localeCompare(a.period))
 }
 
 export async function fetchTenantEmployees(tenantId: string) {
