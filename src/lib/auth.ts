@@ -13,6 +13,14 @@ export type AuthContext = {
   tenantSlug: string | null
   tenantStatus: 'active' | 'suspended' | 'inactive' | null
   planStatus: 'active' | 'inactive' | null
+  tenantEmail: string | null
+  tenantPhone: string | null
+  tenantAddress: string | null
+  tenantGstNumber: string | null
+  customDomain: string | null
+  logoUrl: string | null
+  primaryColor: string
+  secondaryColor: string
 }
 
 export type ClientAccessState =
@@ -36,6 +44,14 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   let tenantSlug: string | null = null
   let tenantStatus: AuthContext['tenantStatus'] = null
   let planStatus: AuthContext['planStatus'] = null
+  let tenantEmail: string | null = null
+  let tenantPhone: string | null = null
+  let tenantAddress: string | null = null
+  let tenantGstNumber: string | null = null
+  let customDomain: string | null = null
+  let logoUrl: string | null = null
+  let primaryColor = '#1769d2'
+  let secondaryColor = '#0f243f'
 
   if (profile.tenantId) {
     const tenantSnapshot = await getDoc(doc(db, 'tenants', profile.tenantId))
@@ -45,6 +61,14 @@ export async function getAuthContext(): Promise<AuthContext | null> {
       tenantSlug = tenant.slug ?? null
       tenantStatus = tenant.status ?? null
       planStatus = tenant.planStatus ?? null
+      tenantEmail = tenant.email ?? null
+      tenantPhone = tenant.phone ?? null
+      tenantAddress = tenant.address ?? null
+      tenantGstNumber = tenant.gstNumber ?? null
+      customDomain = tenant.customDomain ?? null
+      logoUrl = tenant.branding?.logoUrl ?? null
+      primaryColor = tenant.branding?.primaryColor ?? '#1769d2'
+      secondaryColor = tenant.branding?.secondaryColor ?? '#0f243f'
     }
   }
 
@@ -59,6 +83,14 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     tenantSlug,
     tenantStatus,
     planStatus,
+    tenantEmail,
+    tenantPhone,
+    tenantAddress,
+    tenantGstNumber,
+    customDomain,
+    logoUrl,
+    primaryColor,
+    secondaryColor,
   }
 }
 
