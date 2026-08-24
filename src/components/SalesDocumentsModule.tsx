@@ -13,6 +13,7 @@ import {
   type Quotation,
   type QuotationStatus,
 } from '../lib/sales-documents'
+import '../sales-documents.css'
 
 type Props = { tenantId: string; mode: 'quotations' | 'invoices' | 'invoice-reports' }
 
