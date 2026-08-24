@@ -20,7 +20,7 @@ export const CLIENT_NAV_SECTIONS: ClientNavSection[] = [
     { key: 'journey-dashboard', label: 'Journey Dashboard' }, { key: 'customers', label: 'Customers' }, { key: 'followups', label: 'Follow-ups' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'stage-targets', label: 'Stage Targets', adminOnly: true },
   ]},
   { key: 'sales', label: 'Sales', icon: Users, items: [
-    { key: 'add-lead', label: 'Add Lead' }, { key: 'leads', label: 'Leads' }, { key: 'quotations', label: 'Quotations' }, { key: 'invoices', label: 'Invoices' }, { key: 'invoice-reports', label: 'Invoice Reports' }, { key: 'sales-followups', label: 'Follow-ups' }, { key: 'master-data', label: 'Master Data' }, { key: 'imports', label: 'Imports', adminOnly: true },
+    { key: 'add-lead', label: 'Add Lead' }, { key: 'leads', label: 'Leads' }, { key: 'quotations', label: 'Quotations' }, { key: 'invoices', label: 'Invoices' }, { key: 'invoice-reports', label: 'Invoice Reports' }, { key: 'sales-followups', label: 'Follow-ups' }, { key: 'master-data', label: 'Master Data', adminOnly: true }, { key: 'imports', label: 'Imports', adminOnly: true },
   ]},
   { key: 'inventory', label: 'Inventory', icon: Boxes, items: [
     { key: 'inventory-overview', label: 'Overview' }, { key: 'purchases', label: 'Purchases' }, { key: 'panel-inventory', label: 'Panel Inventory' }, { key: 'issues', label: 'Issues' }, { key: 'reservations', label: 'Reservations' }, { key: 'movements', label: 'Movements' }, { key: 'suppliers', label: 'Suppliers' },
