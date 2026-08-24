@@ -25,6 +25,7 @@ import { applyBranding, defaultBranding, resolvePublicBranding, type TenantBrand
 import { visibleClientNavigation } from './lib/client-navigation'
 import CustomerJourneyModule from './components/CustomerJourneyModule'
 import LeadsModule from './components/LeadsModule'
+import SalesDocumentsModule from './components/SalesDocumentsModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -45,6 +46,7 @@ const dashboardCards = [
 ]
 
 const customerModes = new Set(['journey-dashboard', 'customers', 'followups', 'sales-followups', 'pipeline'])
+const salesDocumentModes = new Set(['quotations', 'invoices', 'invoice-reports'])
 
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
@@ -142,6 +144,7 @@ export default function ClientPortal() {
         {activeSection === 'dashboard' ? <><div className="dashboard-heading"><div><h1>Dashboard</h1><p>Your solar business at a glance — updated every minute.</p></div></div><section className="dashboard-grid">{dashboardCards.map((card) => { const Icon = card.icon; return <button className="dashboard-card" key={card.label}><div className={`kpi-icon ${card.tone}`}><Icon size={19} /></div><ArrowRight size={16} className="card-arrow" /><div className="kpi-copy"><strong>{card.value}</strong><span>{card.label}</span><small>{card.hint}</small></div></button> })}</section></>
         : customerModes.has(activeSection) && context.tenantId ? <CustomerJourneyModule tenantId={context.tenantId} mode={customerMode as 'journey-dashboard' | 'customers' | 'followups' | 'pipeline'} />
         : (activeSection === 'leads' || activeSection === 'add-lead') && context.tenantId ? <LeadsModule tenantId={context.tenantId} isAdmin={isAdmin} startInAddMode={activeSection === 'add-lead'} />
+        : salesDocumentModes.has(activeSection) && context.tenantId ? <SalesDocumentsModule tenantId={context.tenantId} mode={activeSection as 'quotations' | 'invoices' | 'invoice-reports'} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
