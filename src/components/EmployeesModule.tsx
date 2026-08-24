@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { KeyRound, Plus, Search, ShieldCheck, UserCog, UserRoundCheck, UserRoundX } from 'lucide-react'
+import './EmployeesModule.css'
 import {
   createEmployee,
   fetchEmployees,
