@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
@@ -20,7 +19,8 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
-import { auth, db } from './lib/firebase'
+import { httpsCallable } from 'firebase/functions'
+import { auth, db, functions } from './lib/firebase'
 
 type TenantStatus = 'active' | 'suspended' | 'inactive'
 
@@ -36,6 +36,7 @@ type Tenant = {
   planStatus: 'active' | 'inactive'
   userLimit?: number | null
   storageLimitMb?: number | null
+  branding?: { logoUrl?: string | null; primaryColor?: string | null }
 }
 
 type UserRecord = {
@@ -48,13 +49,18 @@ type UserRecord = {
 }
 
 const blankTenant = {
-  name: '',
+  companyName: '',
   slug: '',
-  email: '',
+  companyEmail: '',
   phone: '',
   customDomain: '',
   planName: 'standard',
   userLimit: '',
+  logoUrl: '',
+  primaryColor: '#2563eb',
+  adminName: '',
+  adminEmail: '',
+  adminPassword: '',
 }
 
 export default function App() {
@@ -91,31 +97,19 @@ export default function App() {
       getDocs(collection(db, 'users')),
     ])
 
-    setTenants(
-      tenantSnapshot.docs.map((item) => ({
-        id: item.id,
-        ...(item.data() as Omit<Tenant, 'id'>),
-      })),
-    )
-    setUsers(
-      usersSnapshot.docs.map((item) => ({
-        id: item.id,
-        ...(item.data() as Omit<UserRecord, 'id'>),
-      })),
-    )
+    setTenants(tenantSnapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Tenant, 'id'>) })))
+    setUsers(usersSnapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<UserRecord, 'id'>) })))
   }
 
-  useEffect(() => {
-    return onAuthStateChanged(auth, async () => {
-      try {
-        await loadAdminData()
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'Unable to load platform data.')
-      } finally {
-        setBooting(false)
-      }
-    })
-  }, [])
+  useEffect(() => onAuthStateChanged(auth, async () => {
+    try {
+      await loadAdminData()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to load platform data.')
+    } finally {
+      setBooting(false)
+    }
+  }), [])
 
   const userCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -144,13 +138,18 @@ export default function App() {
   const openEdit = (tenant: Tenant) => {
     setEditing(tenant)
     setTenantForm({
-      name: tenant.name,
+      companyName: tenant.name,
       slug: tenant.slug,
-      email: tenant.email ?? '',
+      companyEmail: tenant.email ?? '',
       phone: tenant.phone ?? '',
       customDomain: tenant.customDomain ?? '',
       planName: tenant.planName ?? 'standard',
       userLimit: tenant.userLimit ? String(tenant.userLimit) : '',
+      logoUrl: tenant.branding?.logoUrl ?? '',
+      primaryColor: tenant.branding?.primaryColor ?? '#2563eb',
+      adminName: '',
+      adminEmail: '',
+      adminPassword: '',
     })
     setShowForm(true)
   }
@@ -160,31 +159,36 @@ export default function App() {
     setSaving(true)
     setMessage('')
 
-    const payload = {
-      name: tenantForm.name.trim(),
-      slug: tenantForm.slug.trim().toLowerCase(),
-      email: tenantForm.email.trim() || null,
-      phone: tenantForm.phone.trim() || null,
-      customDomain: tenantForm.customDomain.trim() || null,
-      planName: tenantForm.planName.trim() || 'standard',
-      userLimit: tenantForm.userLimit ? Number(tenantForm.userLimit) : null,
-      updatedAt: serverTimestamp(),
-    }
-
     try {
       if (editing) {
-        await updateDoc(doc(db, 'tenants', editing.id), payload)
-      } else {
-        await addDoc(collection(db, 'tenants'), {
-          ...payload,
-          status: 'active',
-          planStatus: 'active',
-          storageLimitMb: null,
-          createdAt: serverTimestamp(),
+        await updateDoc(doc(db, 'tenants', editing.id), {
+          name: tenantForm.companyName.trim(),
+          slug: tenantForm.slug.trim().toLowerCase(),
+          email: tenantForm.companyEmail.trim() || null,
+          phone: tenantForm.phone.trim() || null,
+          customDomain: tenantForm.customDomain.trim().toLowerCase() || null,
+          planName: tenantForm.planName.trim() || 'standard',
+          userLimit: tenantForm.userLimit ? Number(tenantForm.userLimit) : null,
+          branding: {
+            logoUrl: tenantForm.logoUrl.trim() || null,
+            primaryColor: tenantForm.primaryColor || '#2563eb',
+          },
+          updatedAt: serverTimestamp(),
         })
+        setMessage(`Client ${tenantForm.companyName.trim()} updated.`)
+      } else {
+        const onboardClient = httpsCallable(functions, 'onboardClient')
+        const result = await onboardClient({
+          ...tenantForm,
+          userLimit: tenantForm.userLimit ? Number(tenantForm.userLimit) : null,
+        })
+        const data = result.data as { companyName?: string }
+        setMessage(`Client ${data.companyName || tenantForm.companyName} onboarded successfully.`)
       }
+
       setShowForm(false)
       setEditing(null)
+      setTenantForm(blankTenant)
       await loadAdminData()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save client.')
@@ -195,10 +199,7 @@ export default function App() {
 
   const changeStatus = async (tenant: Tenant, status: TenantStatus) => {
     try {
-      await updateDoc(doc(db, 'tenants', tenant.id), {
-        status,
-        updatedAt: serverTimestamp(),
-      })
+      await updateDoc(doc(db, 'tenants', tenant.id), { status, updatedAt: serverTimestamp() })
       await loadAdminData()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to update status.')
@@ -207,10 +208,7 @@ export default function App() {
 
   const changePlanStatus = async (tenant: Tenant, planStatus: 'active' | 'inactive') => {
     try {
-      await updateDoc(doc(db, 'tenants', tenant.id), {
-        planStatus,
-        updatedAt: serverTimestamp(),
-      })
+      await updateDoc(doc(db, 'tenants', tenant.id), { planStatus, updatedAt: serverTimestamp() })
       await loadAdminData()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to update plan.')
@@ -270,7 +268,7 @@ export default function App() {
           <div><p className="eyebrow">FIREBASE SUPER ADMIN</p><h1>Solar Clients</h1></div>
           <div className="top-actions">
             <button className="ghost" onClick={loadAdminData}><RefreshCw size={17} /> Refresh</button>
-            <button className="primary" onClick={openCreate}><Plus size={17} /> Add Client</button>
+            <button className="primary" onClick={openCreate}><Plus size={17} /> Onboard Client</button>
           </div>
         </header>
 
@@ -283,9 +281,7 @@ export default function App() {
         {message && <div className="notice">{message}</div>}
 
         <section className="panel">
-          <div className="panel-title">
-            <div><h2>Companies</h2><p className="muted">Manage each tenant, plan, domain and access status.</p></div>
-          </div>
+          <div className="panel-title"><div><h2>Companies</h2><p className="muted">Manage each tenant, plan, domain and access status.</p></div></div>
           <div className="table-wrap">
             <table>
               <thead><tr><th>Company</th><th>Domain</th><th>Plan</th><th>Users</th><th>Company Status</th><th>Plan Status</th><th></th></tr></thead>
@@ -296,19 +292,8 @@ export default function App() {
                     <td>{tenant.customDomain || 'Not connected'}</td>
                     <td>{tenant.planName || 'standard'}</td>
                     <td>{userCounts.get(tenant.id) ?? 0}{tenant.userLimit ? ` / ${tenant.userLimit}` : ''}</td>
-                    <td>
-                      <select value={tenant.status} onChange={(e) => changeStatus(tenant, e.target.value as TenantStatus)}>
-                        <option value="active">Active</option>
-                        <option value="suspended">Suspended</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
-                    </td>
-                    <td>
-                      <select value={tenant.planStatus || 'active'} onChange={(e) => changePlanStatus(tenant, e.target.value as 'active' | 'inactive')}>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
-                    </td>
+                    <td><select value={tenant.status} onChange={(e) => changeStatus(tenant, e.target.value as TenantStatus)}><option value="active">Active</option><option value="suspended">Suspended</option><option value="inactive">Inactive</option></select></td>
+                    <td><select value={tenant.planStatus || 'active'} onChange={(e) => changePlanStatus(tenant, e.target.value as 'active' | 'inactive')}><option value="active">Active</option><option value="inactive">Inactive</option></select></td>
                     <td><button className="ghost" onClick={() => openEdit(tenant)}><Pencil size={16} /> Edit</button></td>
                   </tr>
                 ))}
@@ -323,20 +308,27 @@ export default function App() {
         <div className="modal-backdrop" onMouseDown={() => setShowForm(false)}>
           <section className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="panel-title">
-              <div><p className="eyebrow">MODULE 1F</p><h2>{editing ? 'Edit Client' : 'Add Solar Client'}</h2></div>
+              <div><p className="eyebrow">MODULE 2F</p><h2>{editing ? 'Edit Client' : 'Onboard Solar Client'}</h2></div>
               <button className="ghost" onClick={() => setShowForm(false)}>Close</button>
             </div>
             <form className="form-grid" onSubmit={saveTenant}>
-              <label>Company name<input value={tenantForm.name} onChange={(e) => setTenantForm({ ...tenantForm, name: e.target.value })} required /></label>
+              <label>Company name<input value={tenantForm.companyName} onChange={(e) => setTenantForm({ ...tenantForm, companyName: e.target.value })} required /></label>
               <label>Slug<input value={tenantForm.slug} onChange={(e) => setTenantForm({ ...tenantForm, slug: e.target.value })} placeholder="supreme-solar" required /></label>
-              <label>Email<input type="email" value={tenantForm.email} onChange={(e) => setTenantForm({ ...tenantForm, email: e.target.value })} /></label>
+              <label>Company email<input type="email" value={tenantForm.companyEmail} onChange={(e) => setTenantForm({ ...tenantForm, companyEmail: e.target.value })} /></label>
               <label>Phone<input value={tenantForm.phone} onChange={(e) => setTenantForm({ ...tenantForm, phone: e.target.value })} /></label>
               <label>Custom domain<input value={tenantForm.customDomain} onChange={(e) => setTenantForm({ ...tenantForm, customDomain: e.target.value })} placeholder="crm.client.com" /></label>
               <label>Plan<input value={tenantForm.planName} onChange={(e) => setTenantForm({ ...tenantForm, planName: e.target.value })} /></label>
               <label>User limit<input type="number" min="1" value={tenantForm.userLimit} onChange={(e) => setTenantForm({ ...tenantForm, userLimit: e.target.value })} /></label>
+              <label>Logo URL<input value={tenantForm.logoUrl} onChange={(e) => setTenantForm({ ...tenantForm, logoUrl: e.target.value })} /></label>
+              <label>Primary color<input type="color" value={tenantForm.primaryColor} onChange={(e) => setTenantForm({ ...tenantForm, primaryColor: e.target.value })} /></label>
+              {!editing && <>
+                <label>First Client Admin name<input value={tenantForm.adminName} onChange={(e) => setTenantForm({ ...tenantForm, adminName: e.target.value })} required /></label>
+                <label>First Client Admin email<input type="email" value={tenantForm.adminEmail} onChange={(e) => setTenantForm({ ...tenantForm, adminEmail: e.target.value })} required /></label>
+                <label>Temporary password<input type="password" minLength={8} value={tenantForm.adminPassword} onChange={(e) => setTenantForm({ ...tenantForm, adminPassword: e.target.value })} required /></label>
+              </>}
               <div className="form-actions">
                 <button type="button" className="ghost" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Client'}</button>
+                <button type="submit" className="primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Client + Admin'}</button>
               </div>
             </form>
           </section>
