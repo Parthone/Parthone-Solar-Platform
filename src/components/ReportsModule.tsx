@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BarChart3, Boxes, CircleDollarSign, ReceiptIndianRupee, RefreshCw, Users } from 'lucide-react'
 import { fetchBusinessReport, type BusinessReport, type ReportRange } from '../lib/reports'
+import '../reports.css'
 
 type Props = { tenantId: string; mode: 'business-reports' | 'inventory-reports' }
 
