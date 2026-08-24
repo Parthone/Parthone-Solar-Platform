@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CalendarCheck, ClipboardList, Hammer, PackageX, ReceiptIndianRupee, RefreshCw, UserPlus, Wallet } from 'lucide-react'
 import { fetchDashboardStats, type DashboardStats } from '../lib/dashboard-search'
 import type { EmployeeModuleKey } from '../lib/permissions-targets'
+import './DashboardHome.css'
 
 type Props = {
   tenantId: string
