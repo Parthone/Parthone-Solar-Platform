@@ -23,9 +23,7 @@ service cloud.firestore {
 
       match /customers/{documentId} {
         allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'customers');
-        match /stageHistory/{historyId} {
-          allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'customers');
-        }
+        match /stageHistory/{historyId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'customers'); }
       }
       match /leads/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'leads'); }
       match /quotations/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'quotations'); }
@@ -36,12 +34,15 @@ service cloud.firestore {
           allow update, delete: if isSuperAdmin();
         }
       }
-      match /documentCounters/{counterId} {
-        allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'quotations') || moduleAllowed(tenantIdDoc, 'invoices');
-      }
+      match /documentCounters/{counterId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'quotations') || moduleAllowed(tenantIdDoc, 'invoices'); }
+
       match /inventoryItems/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
       match /suppliers/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
       match /stockMovements/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
+      match /purchaseBatches/{batchId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
+      match /inventorySerials/{serialId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
+      match /inventoryReservations/{reservationId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
+
       match /expenses/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'expenses'); }
       match /expenseCategories/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'expenses'); }
       match /accountStatementConfirmations/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'expenses'); }
