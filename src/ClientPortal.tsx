@@ -30,6 +30,7 @@ import InventoryModule from './components/InventoryModule'
 import FinanceModule from './components/FinanceModule'
 import EmployeesModule from './components/EmployeesModule'
 import TrackingProfileModule from './components/TrackingProfileModule'
+import AuditExternalLinksModule from './components/AuditExternalLinksModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -156,6 +157,8 @@ export default function ClientPortal() {
         : financeModes.has(activeSection) && context.tenantId ? <FinanceModule tenantId={context.tenantId} mode={activeSection as 'expenses' | 'expense-categories' | 'account-statement-confirmation'} currentUserName={context.fullName} />
         : activeSection === 'user-management' && context.tenantId && isAdmin ? <EmployeesModule tenantId={context.tenantId} currentUserId={context.userId} />
         : trackingModes.has(activeSection) && context.tenantId ? <TrackingProfileModule tenantId={context.tenantId} userId={context.userId} fullName={context.fullName || context.email || 'Employee'} role={context.role === 'client_admin' ? 'client_admin' : 'employee'} mode={activeSection as 'live-tracking' | 'profile' | 'mobile-app'} />
+        : activeSection === 'external-links' && context.tenantId ? <AuditExternalLinksModule tenantId={context.tenantId} mode="external-links" isAdmin={isAdmin} />
+        : activeSection === 'audit-log' && context.tenantId ? <AuditExternalLinksModule tenantId={context.tenantId} mode="audit-log" isAdmin={isAdmin} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
