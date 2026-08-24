@@ -4,7 +4,17 @@ Centralized multi-tenant solar business software for Parthone solar clients.
 
 ## Reference application
 
-The existing `Parthone/MSUK-Solar-Software` repository is the primary functional and UI reference. It must remain unchanged. This repository is the new centralized platform.
+`Parthone/MSUK-Solar-Software` is the primary functional and UI reference and must remain unchanged. All centralized development happens in this repository.
+
+## Firebase-first stack
+
+- React + Vite frontend
+- Firebase Hosting
+- Firebase Authentication
+- Cloud Firestore
+- Firebase Storage
+- Cloud Functions
+- Firestore and Storage Security Rules
 
 ## Core architecture goals
 
@@ -15,11 +25,11 @@ The existing `Parthone/MSUK-Solar-Software` repository is the primary functional
 - Parthone Super Admin for onboarding and management
 - Shared platform updates deployed to all clients
 - Feature/module controls per client
-- Secure environment configuration with no production secrets committed to Git
+- Ability to add Google Cloud services later without rebuilding the platform
 
-## Initial build order
+## Build order
 
-1. Multi-tenant foundation
+1. Firebase multi-tenant foundation
 2. Parthone Super Admin
 3. Client onboarding
 4. Authentication and role-based access
