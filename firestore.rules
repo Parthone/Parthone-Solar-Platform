@@ -12,18 +12,49 @@ service cloud.firestore {
     function isClientAdmin() { return signedIn() && userActive() && role() == 'client_admin'; }
     function sameTenant(id) { return signedIn() && userActive() && tenantId() == id; }
     function activeSameTenant(id) { return sameTenant(id) && tenantActive(id); }
+    function permissionPath(id) { return /databases/$(database)/documents/tenants/$(id)/settings/permissions; }
+    function moduleAllowed(id, key) {
+      return activeSameTenant(id) && (
+        role() == 'client_admin' ||
+        !exists(permissionPath(id)) ||
+        key in get(permissionPath(id)).data.employeeModules
+      );
+    }
 
     match /tenants/{tenantIdDoc} {
       allow read: if isSuperAdmin() || sameTenant(tenantIdDoc);
       allow create, update, delete: if isSuperAdmin();
 
+      match /customers/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'customers'); }
+      match /leads/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'leads'); }
+      match /quotations/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'quotations'); }
+      match /invoices/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'invoices'); }
+
+      match /inventoryItems/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
+      match /suppliers/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
+      match /stockMovements/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'inventory'); }
+
+      match /expenses/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'expenses'); }
+      match /expenseCategories/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'expenses'); }
+      match /accountStatementConfirmations/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'expenses'); }
+
       match /bankAccounts/{bankAccountId} {
+        allow read: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'bank-accounts');
+        allow write: if isSuperAdmin();
+      }
+
+      match /settings/{settingId} {
         allow read: if isSuperAdmin() || activeSameTenant(tenantIdDoc);
         allow write: if isSuperAdmin();
       }
 
+      match /targets/{targetId} {
+        allow read: if isSuperAdmin() || (isClientAdmin() && activeSameTenant(tenantIdDoc));
+        allow write: if isSuperAdmin();
+      }
+
       match /{collectionName}/{documentId} {
-        allow read, write: if isSuperAdmin() || (collectionName != 'bankAccounts' && activeSameTenant(tenantIdDoc));
+        allow read, write: if isSuperAdmin();
       }
     }
 
@@ -35,7 +66,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSuperAdmin() ||
         (signedIn() && request.auth.uid == userId) ||
-        (isClientAdmin() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
+        (signedIn() && userActive() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
       allow create, delete: if isSuperAdmin();
       allow update: if isSuperAdmin() ||
         (signedIn() && request.auth.uid == userId &&
@@ -48,17 +79,17 @@ service cloud.firestore {
     match /employeeTracking/{trackingId} {
       allow read: if isSuperAdmin() ||
         (isClientAdmin() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId)) ||
-        (signedIn() && request.auth.uid == resource.data.userId && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
+        (signedIn() && request.auth.uid == resource.data.userId && resource.data.tenantId == tenantId() && moduleAllowed(resource.data.tenantId, 'live-tracking'));
       allow create: if signedIn() && userActive() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.tenantId == tenantId() &&
-        activeSameTenant(request.resource.data.tenantId);
+        moduleAllowed(request.resource.data.tenantId, 'live-tracking');
       allow update: if signedIn() && userActive() &&
         resource.data.userId == request.auth.uid &&
         resource.data.tenantId == tenantId() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.tenantId == tenantId() &&
-        activeSameTenant(request.resource.data.tenantId);
+        moduleAllowed(request.resource.data.tenantId, 'live-tracking');
       allow delete: if isSuperAdmin();
     }
 
@@ -68,12 +99,10 @@ service cloud.firestore {
     }
 
     match /externalLinks/{linkId} {
-      allow read: if isSuperAdmin() || (signedIn() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
+      allow read: if isSuperAdmin() || (signedIn() && resource.data.tenantId == tenantId() && moduleAllowed(resource.data.tenantId, 'external-links'));
       allow write: if isSuperAdmin();
     }
 
-    match /platform/{document=**} {
-      allow read, write: if isSuperAdmin();
-    }
+    match /platform/{document=**} { allow read, write: if isSuperAdmin(); }
   }
 }
