@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { Landmark, LockKeyhole, Palette, Plus, Star } from 'lucide-react'
+import '../settings.css'
 import {
   changeOwnPassword,
   fetchBankAccounts,
