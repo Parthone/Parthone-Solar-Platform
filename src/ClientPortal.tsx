@@ -8,6 +8,12 @@ import {
   type AuthContext,
   type ClientAccessState,
 } from './lib/auth'
+import {
+  applyBranding,
+  defaultBranding,
+  resolvePublicBranding,
+  type TenantBranding,
+} from './lib/branding'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -19,14 +25,44 @@ const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin
 
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
+  const [publicBranding, setPublicBranding] = useState<TenantBranding>(defaultBranding)
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
 
+  useEffect(() => {
+    resolvePublicBranding()
+      .then((branding) => {
+        if (branding) {
+          setPublicBranding(branding)
+          applyBranding(branding)
+        }
+      })
+      .catch(() => undefined)
+  }, [])
+
   const load = async () => {
     try {
-      setContext(await getAuthContext())
+      const nextContext = await getAuthContext()
+      setContext(nextContext)
+      if (nextContext?.tenantId) {
+        const branding: TenantBranding = {
+          tenantId: nextContext.tenantId,
+          companyName: nextContext.tenantName || 'Solar Business Software',
+          slug: nextContext.tenantSlug || '',
+          customDomain: nextContext.customDomain,
+          logoUrl: nextContext.logoUrl,
+          primaryColor: nextContext.primaryColor,
+          secondaryColor: nextContext.secondaryColor,
+          email: nextContext.tenantEmail,
+          phone: nextContext.tenantPhone,
+          address: nextContext.tenantAddress,
+          gstNumber: nextContext.tenantGstNumber,
+        }
+        setPublicBranding(branding)
+        applyBranding(branding)
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to load account.')
       setContext(null)
@@ -60,17 +96,26 @@ export default function ClientPortal() {
 
   if (!auth.currentUser || !context) {
     return (
-      <main className="auth-shell">
+      <main className="auth-shell branded-auth">
         <section className="auth-card">
-          <div className="brand-mark"><SolarPanel size={28} /></div>
+          {publicBranding.logoUrl ? (
+            <img className="tenant-logo" src={publicBranding.logoUrl} alt={publicBranding.companyName} />
+          ) : (
+            <div className="brand-mark"><SolarPanel size={28} /></div>
+          )}
           <p className="eyebrow">SOLAR BUSINESS SOFTWARE</p>
-          <h1>Client Login</h1>
+          <h1>{publicBranding.companyName || 'Client Login'}</h1>
           <p className="muted">Sign in using the account provided by your solar company.</p>
           <form onSubmit={login} className="stack">
             <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
             <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
-            <button className="primary" type="submit">Sign in</button>
+            <button className="primary tenant-primary" type="submit">Sign in</button>
           </form>
+          {(publicBranding.phone || publicBranding.email) && (
+            <p className="muted company-contact">
+              {publicBranding.phone || publicBranding.email}
+            </p>
+          )}
           {message && <p className="error">{message}</p>}
         </section>
       </main>
@@ -102,11 +147,14 @@ export default function ClientPortal() {
   }
 
   return (
-    <div className="client-shell">
-      <header className="client-topbar">
-        <div>
-          <p className="eyebrow">{context.role === 'client_admin' ? 'CLIENT ADMIN' : 'EMPLOYEE'}</p>
-          <h1>{context.tenantName}</h1>
+    <div className="client-shell branded-client">
+      <header className="client-topbar tenant-header">
+        <div className="tenant-heading">
+          {context.logoUrl ? <img className="tenant-logo small" src={context.logoUrl} alt={context.tenantName || 'Company'} /> : null}
+          <div>
+            <p className="eyebrow">{context.role === 'client_admin' ? 'CLIENT ADMIN' : 'EMPLOYEE'}</p>
+            <h1>{context.tenantName}</h1>
+          </div>
         </div>
         <button className="ghost" onClick={logout}><LogOut size={17} /> Sign out</button>
       </header>
@@ -126,8 +174,11 @@ export default function ClientPortal() {
       </section>
 
       <section className="panel">
-        <h2>Client dashboard foundation ready</h2>
-        <p className="muted">All upcoming MSUK-style solar modules will load inside this tenant-scoped session and respect Firebase Security Rules.</p>
+        <h2>Company Details</h2>
+        <p className="muted">
+          {[context.tenantPhone, context.tenantEmail, context.tenantAddress].filter(Boolean).join(' · ') || 'Company contact details not added yet.'}
+        </p>
+        {context.tenantGstNumber && <p className="muted">GST: {context.tenantGstNumber}</p>}
       </section>
     </div>
   )
