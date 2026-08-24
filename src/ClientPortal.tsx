@@ -23,6 +23,7 @@ import { auth } from './lib/firebase'
 import { getAuthContext, getClientAccessState, type AuthContext, type ClientAccessState } from './lib/auth'
 import { applyBranding, defaultBranding, resolvePublicBranding, type TenantBranding } from './lib/branding'
 import { visibleClientNavigation } from './lib/client-navigation'
+import { fetchPermissionSettings, type EmployeeModuleKey } from './lib/permissions-targets'
 import CustomerJourneyModule from './components/CustomerJourneyModule'
 import LeadsModule from './components/LeadsModule'
 import SalesDocumentsModule from './components/SalesDocumentsModule'
@@ -33,6 +34,7 @@ import TrackingProfileModule from './components/TrackingProfileModule'
 import AuditExternalLinksModule from './components/AuditExternalLinksModule'
 import ReportsModule from './components/ReportsModule'
 import SettingsModule from './components/SettingsModule'
+import PermissionsTargetsModule from './components/PermissionsTargetsModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -59,9 +61,11 @@ const financeModes = new Set(['expenses', 'expense-categories', 'account-stateme
 const trackingModes = new Set(['live-tracking', 'profile', 'mobile-app'])
 const reportModes = new Set(['business-reports', 'inventory-reports'])
 const settingsModes = new Set(['branding', 'bank-accounts', 'change-password'])
+const permissionsTargetModes = new Set(['roles-permissions', 'stage-targets', 'task-targets'])
 
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
+  const [employeeModules, setEmployeeModules] = useState<EmployeeModuleKey[] | undefined>(undefined)
   const [publicBranding, setPublicBranding] = useState<TenantBranding>(defaultBranding)
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
@@ -83,6 +87,11 @@ export default function ClientPortal() {
       const nextContext = await getAuthContext()
       setContext(nextContext)
       if (nextContext?.tenantId) {
+        if (nextContext.role === 'employee') {
+          try { setEmployeeModules((await fetchPermissionSettings(nextContext.tenantId)).employeeModules) }
+          catch { setEmployeeModules(undefined) }
+        } else setEmployeeModules(undefined)
+
         const branding: TenantBranding = {
           tenantId: nextContext.tenantId,
           companyName: nextContext.tenantName || 'Solar Business Software',
@@ -107,7 +116,13 @@ export default function ClientPortal() {
 
   useEffect(() => onAuthStateChanged(auth, async () => { setLoading(true); await load() }), [])
 
-  const navigation = useMemo(() => context ? visibleClientNavigation(context.role) : [], [context])
+  const navigation = useMemo(() => context ? visibleClientNavigation(context.role, context.role === 'employee' ? employeeModules : undefined) : [], [context, employeeModules])
+
+  useEffect(() => {
+    if (!context || context.role !== 'employee' || !employeeModules) return
+    const visibleKeys = new Set(navigation.flatMap((section) => [section.key, ...(section.items || []).map((item) => item.key)]))
+    if (!visibleKeys.has(activeSection)) setActiveSection('dashboard')
+  }, [context, employeeModules, navigation, activeSection])
 
   const login = async (event: FormEvent) => {
     event.preventDefault(); setMessage('')
@@ -165,6 +180,7 @@ export default function ClientPortal() {
         : activeSection === 'audit-log' && context.tenantId ? <AuditExternalLinksModule tenantId={context.tenantId} mode="audit-log" isAdmin={isAdmin} />
         : reportModes.has(activeSection) && context.tenantId ? <ReportsModule tenantId={context.tenantId} mode={activeSection as 'business-reports' | 'inventory-reports'} />
         : settingsModes.has(activeSection) && context.tenantId ? <SettingsModule tenantId={context.tenantId} mode={activeSection as 'branding' | 'bank-accounts' | 'change-password'} isAdmin={isAdmin} currentBranding={{ companyName: context.tenantName || 'Solar Business Software', email: context.tenantEmail, phone: context.tenantPhone, address: context.tenantAddress, gstNumber: context.tenantGstNumber, logoUrl: context.logoUrl, primaryColor: context.primaryColor, secondaryColor: context.secondaryColor }} onBrandingSaved={() => void load()} />
+        : permissionsTargetModes.has(activeSection) && context.tenantId ? <PermissionsTargetsModule tenantId={context.tenantId} mode={activeSection as 'roles-permissions' | 'stage-targets' | 'task-targets'} isAdmin={isAdmin} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
