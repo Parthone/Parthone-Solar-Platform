@@ -1,0 +1,60 @@
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { Database, FileUp, Plus, Settings2, Trash2 } from 'lucide-react'
+import { deleteMasterData, fetchErpConfig, fetchMasterData, importCsvRows, parseCsv, saveErpConfig, saveMasterData, type ErpConfig, type ImportKind, type MasterItem, type MasterType } from '../lib/erp-imports'
+
+type Props = { tenantId: string; mode: 'erp-studio' | 'master-data' | 'imports'; isAdmin: boolean }
+
+const masterTypes: Array<{ value: MasterType; label: string }> = [
+  { value: 'panel_brand', label: 'Panel Brands' }, { value: 'panel_model', label: 'Panel Models' },
+  { value: 'inverter_brand', label: 'Inverter Brands' }, { value: 'inverter_model', label: 'Inverter Models' },
+  { value: 'lead_source', label: 'Lead Sources' }, { value: 'customer_category', label: 'Customer Categories' },
+  { value: 'inventory_category', label: 'Inventory Categories' },
+]
+
+export default function ErpImportsModule({ tenantId, mode, isAdmin }: Props) {
+  if (!isAdmin) return <section className="panel"><Settings2 size={24}/><h2>Admin Only</h2><p className="muted">Only Client Admins can manage ERP configuration and imports.</p></section>
+  if (mode === 'erp-studio') return <ErpStudio tenantId={tenantId} />
+  if (mode === 'master-data') return <MasterData tenantId={tenantId} />
+  return <Imports />
+}
+
+function ErpStudio({ tenantId }: { tenantId: string }) {
+  const [form, setForm] = useState<ErpConfig>({ leadAutoAssign: false, defaultTaxPercent: 18, quotationValidityDays: 15, invoiceDueDays: 7, currency: 'INR', fiscalYearStartMonth: 4 })
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => { fetchErpConfig(tenantId).then(setForm).catch((e) => setMessage(e.message)) }, [tenantId])
+  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setMessage(''); try { await saveErpConfig(form); setMessage('ERP configuration saved.') } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to save ERP settings.') } finally { setSaving(false) } }
+  return <div className="module-stack"><div className="module-head"><div><h1>ERP Studio</h1><p>Configure tenant-wide business defaults.</p></div></div>{message && <div className="notice">{message}</div>}<section className="panel"><form className="form-grid" onSubmit={submit}><label>Default GST %<input type="number" min="0" max="100" value={form.defaultTaxPercent} onChange={(e)=>setForm({...form,defaultTaxPercent:Number(e.target.value)})}/></label><label>Quotation Validity Days<input type="number" min="1" value={form.quotationValidityDays} onChange={(e)=>setForm({...form,quotationValidityDays:Number(e.target.value)})}/></label><label>Invoice Due Days<input type="number" min="0" value={form.invoiceDueDays} onChange={(e)=>setForm({...form,invoiceDueDays:Number(e.target.value)})}/></label><label>Fiscal Year Start Month<select value={form.fiscalYearStartMonth} onChange={(e)=>setForm({...form,fiscalYearStartMonth:Number(e.target.value)})}>{Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{new Date(2026,i,1).toLocaleString('en-IN',{month:'long'})}</option>)}</select></label><label>Currency<select value="INR" disabled><option>INR</option></select></label><label>Lead Auto Assign<select value={form.leadAutoAssign?'yes':'no'} onChange={(e)=>setForm({...form,leadAutoAssign:e.target.value==='yes'})}><option value="no">Manual</option><option value="yes">Auto assign</option></select></label><div className="form-actions"><button className="primary tenant-primary" disabled={saving}>{saving?'Saving…':'Save ERP Settings'}</button></div></form></section></div>
+}
+
+function MasterData({ tenantId }: { tenantId: string }) {
+  const [rows, setRows] = useState<MasterItem[]>([])
+  const [type, setType] = useState<MasterType>('panel_brand')
+  const [message, setMessage] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<MasterItem | null>(null)
+  const [form, setForm] = useState({ name:'', code:'', isActive:true, sortOrder:0 })
+  const load = async () => { try { setRows(await fetchMasterData(tenantId)) } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to load master data.') } }
+  useEffect(() => { void load() }, [tenantId])
+  const filtered = useMemo(() => rows.filter((r)=>r.type===type), [rows,type])
+  const openCreate = () => { setEditing(null); setForm({name:'',code:'',isActive:true,sortOrder:filtered.length}); setShowForm(true) }
+  const openEdit = (r: MasterItem) => { setEditing(r); setForm({name:r.name,code:r.code||'',isActive:r.isActive,sortOrder:r.sortOrder}); setShowForm(true) }
+  const submit = async (event: FormEvent) => { event.preventDefault(); try { await saveMasterData({ id:editing?.id, type, name:form.name.trim(), code:form.code.trim()||null, isActive:form.isActive, sortOrder:Number(form.sortOrder) }); setShowForm(false); await load() } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to save master data.') } }
+  const remove = async (id:string) => { if (!confirm('Delete this master value?')) return; await deleteMasterData(id); await load() }
+  return <div className="module-stack"><div className="module-head"><div><h1>Master Data</h1><p>Manage reusable solar brands, models, categories and dropdown values.</p></div><button className="primary tenant-primary" onClick={openCreate}><Plus size={16}/> Add Value</button></div>{message && <div className="notice">{message}</div>}<div className="filter-tabs">{masterTypes.map((m)=><button key={m.value} className={type===m.value?'active':''} onClick={()=>setType(m.value)}>{m.label}</button>)}</div><div className="master-grid">{filtered.map((r)=><article className="panel master-card" key={r.id}><div><Database size={18}/><strong>{r.name}</strong><small>{r.code || 'No code'}</small></div><span className={`status-chip ${r.isActive?'active':'inactive'}`}>{r.isActive?'Active':'Inactive'}</span><div className="bank-actions"><button className="ghost" onClick={()=>openEdit(r)}>Edit</button><button className="ghost danger-text" onClick={()=>remove(r.id)}><Trash2 size={14}/> Delete</button></div></article>)}</div>{showForm && <div className="modal-backdrop" onMouseDown={()=>setShowForm(false)}><section className="modal" onMouseDown={(e)=>e.stopPropagation()}><div className="panel-title"><h2>{editing?'Edit':'Add'} Master Value</h2><button className="ghost" onClick={()=>setShowForm(false)}>Close</button></div><form className="form-grid" onSubmit={submit}><label>Name<input value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} required/></label><label>Code<input value={form.code} onChange={(e)=>setForm({...form,code:e.target.value})}/></label><label>Sort Order<input type="number" value={form.sortOrder} onChange={(e)=>setForm({...form,sortOrder:Number(e.target.value)})}/></label><label>Status<select value={form.isActive?'active':'inactive'} onChange={(e)=>setForm({...form,isActive:e.target.value==='active'})}><option value="active">Active</option><option value="inactive">Inactive</option></select></label><div className="form-actions"><button type="button" className="ghost" onClick={()=>setShowForm(false)}>Cancel</button><button className="primary tenant-primary">Save</button></div></form></section></div>}</div>
+}
+
+function Imports() {
+  const [kind, setKind] = useState<ImportKind>('customers')
+  const [rows, setRows] = useState<Record<string,string>[]>([])
+  const [fileName, setFileName] = useState('')
+  const [message, setMessage] = useState('')
+  const [result, setResult] = useState<{imported:number;skipped:number;errors:Array<{row:number;message:string}>}|null>(null)
+  const [uploading, setUploading] = useState(false)
+  const required: Record<ImportKind,string[]> = { customers:['name','mobile'], leads:['name','mobile'], inventory:['name','category'] }
+  const onFile = async (file?: File) => { if (!file) return; setMessage(''); setResult(null); const text = await file.text(); const parsed = parseCsv(text); if (!parsed.length) { setRows([]); setMessage('No data rows found in CSV.'); return } setRows(parsed); setFileName(file.name) }
+  const headers = rows[0] ? Object.keys(rows[0]) : []
+  const missing = required[kind].filter((h)=>!headers.includes(h))
+  const submit = async () => { if (!rows.length) return; if (missing.length) { setMessage(`Missing required columns: ${missing.join(', ')}`); return } setUploading(true); setMessage(''); try { const out = await importCsvRows(kind, rows); setResult(out); setMessage('Import completed.') } catch (e) { setMessage(e instanceof Error ? e.message : 'Import failed.') } finally { setUploading(false) } }
+  return <div className="module-stack"><div className="module-head"><div><h1>Imports</h1><p>Import customers, leads or inventory from CSV with validation.</p></div></div>{message && <div className="notice">{message}</div>}<section className="panel import-panel"><div className="import-controls"><label>Import Type<select value={kind} onChange={(e)=>{setKind(e.target.value as ImportKind);setResult(null)}}><option value="customers">Customers</option><option value="leads">Leads</option><option value="inventory">Inventory</option></select></label><label className="file-picker"><FileUp size={18}/> Choose CSV<input type="file" accept=".csv,text/csv" onChange={(e)=>void onFile(e.target.files?.[0])}/></label></div><p className="muted">Required columns: {required[kind].join(', ')}</p>{fileName && <p><strong>{fileName}</strong> · {rows.length} rows</p>}{rows.length>0 && <div className="table-wrap"><table><thead><tr>{headers.slice(0,6).map((h)=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.slice(0,5).map((r,i)=><tr key={i}>{headers.slice(0,6).map((h)=><td key={h}>{r[h]}</td>)}</tr>)}</tbody></table></div>}{missing.length>0 && rows.length>0 && <p className="error">Missing: {missing.join(', ')}</p>}<button className="primary tenant-primary" disabled={!rows.length||uploading||missing.length>0} onClick={submit}>{uploading?'Importing…':`Import ${rows.length || ''} Rows`}</button></section>{result && <section className="panel"><h3>Import Summary</h3><div className="summary-grid compact"><article><span>Imported</span><strong>{result.imported}</strong></article><article><span>Skipped</span><strong>{result.skipped}</strong></article><article><span>Errors</span><strong>{result.errors.length}</strong></article></div>{result.errors.length>0 && <div className="import-errors">{result.errors.slice(0,20).map((e)=><p key={`${e.row}-${e.message}`}>Row {e.row}: {e.message}</p>)}</div>}</section>}</div>
+}
