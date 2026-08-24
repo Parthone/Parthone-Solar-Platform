@@ -21,7 +21,12 @@ service cloud.firestore {
       allow read: if isSuperAdmin() || sameTenant(tenantIdDoc);
       allow create, update, delete: if isSuperAdmin();
 
-      match /customers/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'customers'); }
+      match /customers/{documentId} {
+        allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'customers');
+        match /stageHistory/{historyId} {
+          allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'customers');
+        }
+      }
       match /leads/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'leads'); }
       match /quotations/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'quotations'); }
       match /invoices/{documentId} { allow read, write: if isSuperAdmin() || moduleAllowed(tenantIdDoc, 'invoices'); }
