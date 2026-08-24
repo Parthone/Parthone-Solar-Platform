@@ -4,6 +4,7 @@ import App from './App'
 import ClientPortal from './ClientPortal'
 import './styles.css'
 import './tracking.css'
+import './components/customer-workflow.css'
 
 const path = window.location.pathname
 const Root = path.startsWith('/client') ? ClientPortal : App
