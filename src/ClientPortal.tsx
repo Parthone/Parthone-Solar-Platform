@@ -1,5 +1,23 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { LogOut, ShieldAlert, SolarPanel, UserRound } from 'lucide-react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+import {
+  ArrowRight,
+  CalendarCheck,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Hammer,
+  LogOut,
+  Menu,
+  PackageX,
+  ReceiptIndianRupee,
+  Search,
+  ShieldAlert,
+  SolarPanel,
+  UserPlus,
+  UserRound,
+  Wallet,
+  X,
+} from 'lucide-react'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { auth } from './lib/firebase'
 import {
@@ -14,6 +32,7 @@ import {
   resolvePublicBranding,
   type TenantBranding,
 } from './lib/branding'
+import { visibleClientNavigation } from './lib/client-navigation'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -23,6 +42,16 @@ const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin
   plan_inactive: 'Your company plan is inactive. Contact Parthone support.',
 }
 
+const dashboardCards = [
+  { label: "Today's Leads", value: '—', hint: 'Created today', icon: UserPlus, tone: 'primary' },
+  { label: 'Pending Follow-ups', value: '—', hint: '0 overdue', icon: CalendarCheck, tone: 'secondary' },
+  { label: 'Pending Payments', value: '—', hint: 'Outstanding Payment', icon: Wallet, tone: 'warning' },
+  { label: 'Pending Installations', value: '—', hint: 'Awaiting completion', icon: Hammer, tone: 'accent' },
+  { label: 'Employee Tasks', value: '—', hint: 'Workload signals', icon: ClipboardList, tone: 'primary' },
+  { label: 'Unpaid Invoices', value: '—', hint: 'Outstanding amount', icon: ReceiptIndianRupee, tone: 'warning' },
+  { label: 'Low Stock Alerts', value: '—', hint: 'Items below reorder level', icon: PackageX, tone: 'danger' },
+]
+
 export default function ClientPortal() {
   const [context, setContext] = useState<AuthContext | null>(null)
   const [publicBranding, setPublicBranding] = useState<TenantBranding>(defaultBranding)
@@ -30,6 +59,10 @@ export default function ClientPortal() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true })
+  const [activeSection, setActiveSection] = useState('dashboard')
 
   useEffect(() => {
     resolvePublicBranding()
@@ -71,12 +104,15 @@ export default function ClientPortal() {
     }
   }
 
-  useEffect(() => {
-    return onAuthStateChanged(auth, async () => {
-      setLoading(true)
-      await load()
-    })
-  }, [])
+  useEffect(() => onAuthStateChanged(auth, async () => {
+    setLoading(true)
+    await load()
+  }), [])
+
+  const navigation = useMemo(
+    () => context ? visibleClientNavigation(context.role) : [],
+    [context],
+  )
 
   const login = async (event: FormEvent) => {
     event.preventDefault()
@@ -88,9 +124,7 @@ export default function ClientPortal() {
     }
   }
 
-  const logout = async () => {
-    await signOut(auth)
-  }
+  const logout = async () => signOut(auth)
 
   if (loading) return <div className="center-screen">Loading account…</div>
 
@@ -112,9 +146,7 @@ export default function ClientPortal() {
             <button className="primary tenant-primary" type="submit">Sign in</button>
           </form>
           {(publicBranding.phone || publicBranding.email) && (
-            <p className="muted company-contact">
-              {publicBranding.phone || publicBranding.email}
-            </p>
+            <p className="muted company-contact">{publicBranding.phone || publicBranding.email}</p>
           )}
           {message && <p className="error">{message}</p>}
         </section>
@@ -123,63 +155,119 @@ export default function ClientPortal() {
   }
 
   const accessState = getClientAccessState(context)
-
   if (accessState === 'super_admin') {
-    return (
-      <div className="center-screen stack narrow">
-        <ShieldAlert size={42} />
-        <h2>Use the Super Admin portal</h2>
-        <p className="muted">This account belongs to Parthone platform administration.</p>
-        <button onClick={logout}>Sign out</button>
-      </div>
-    )
+    return <div className="center-screen stack narrow"><ShieldAlert size={42} /><h2>Use the Super Admin portal</h2><p className="muted">This account belongs to Parthone platform administration.</p><button onClick={logout}>Sign out</button></div>
   }
-
   if (accessState !== 'allowed') {
-    return (
-      <div className="center-screen stack narrow">
-        <ShieldAlert size={42} />
-        <h2>Company access unavailable</h2>
-        <p className="muted">{accessMessages[accessState]}</p>
-        <button onClick={logout}>Sign out</button>
-      </div>
-    )
+    return <div className="center-screen stack narrow"><ShieldAlert size={42} /><h2>Company access unavailable</h2><p className="muted">{accessMessages[accessState]}</p><button onClick={logout}>Sign out</button></div>
   }
 
   return (
-    <div className="client-shell branded-client">
-      <header className="client-topbar tenant-header">
-        <div className="tenant-heading">
-          {context.logoUrl ? <img className="tenant-logo small" src={context.logoUrl} alt={context.tenantName || 'Company'} /> : null}
-          <div>
-            <p className="eyebrow">{context.role === 'client_admin' ? 'CLIENT ADMIN' : 'EMPLOYEE'}</p>
-            <h1>{context.tenantName}</h1>
+    <div className="msuk-shell">
+      {sidebarOpen && <button className="sidebar-overlay" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
+      <aside className={`msuk-sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="msuk-sidebar-head">
+          <button className="mobile-close" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
+          <button className="tenant-brand-button" onClick={() => setActiveSection('dashboard')}>
+            {context.logoUrl ? <img className="tenant-logo small" src={context.logoUrl} alt={context.tenantName || 'Company'} /> : <div className="brand-mark compact"><SolarPanel size={20} /></div>}
+            <span className="tenant-brand-copy">
+              <strong>{context.tenantName}</strong>
+              <small>{context.tenantGstNumber ? `GSTIN: ${context.tenantGstNumber}` : context.tenantSlug}</small>
+            </span>
+          </button>
+        </div>
+
+        <nav className="msuk-nav">
+          {navigation.map((section) => {
+            const Icon = section.icon
+            const isActive = activeSection === section.key
+            const hasItems = Boolean(section.items?.length)
+            return (
+              <div key={section.key} className="nav-block">
+                <button
+                  className={`nav-main ${isActive ? 'active' : ''}`}
+                  onClick={() => {
+                    if (hasItems) setExpanded((prev) => ({ ...prev, [section.key]: !prev[section.key] }))
+                    else setActiveSection(section.key)
+                  }}
+                >
+                  <Icon size={18} />
+                  <span>{section.label}</span>
+                  {hasItems && <ChevronRight size={16} className={expanded[section.key] ? 'rotate' : ''} />}
+                </button>
+                {hasItems && expanded[section.key] && (
+                  <div className="nav-sub">
+                    {section.items!.map((item) => (
+                      <button key={item.key} className={activeSection === item.key ? 'active' : ''} onClick={() => setActiveSection(item.key)}>{item.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </nav>
+
+        <div className="sidebar-footer-links">
+          <button onClick={() => setActiveSection('followups')}><CalendarCheck size={17} /> Today's Follow-ups</button>
+          <button onClick={() => setActiveSection('profile')}><UserRound size={17} /> {context.fullName || 'Account'}</button>
+        </div>
+      </aside>
+
+      <div className="msuk-main">
+        <header className="msuk-topbar">
+          <button className="menu-trigger" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
+          <div className="global-search"><Search size={18} /><input placeholder="Search customers, leads, invoices..." /></div>
+          <button className="quick-add">+ Add Lead</button>
+          <div className="profile-wrap">
+            <button className="profile-trigger" onClick={() => setProfileOpen((open) => !open)}>
+              <span className="avatar">{(context.fullName || context.email || '?').charAt(0).toUpperCase()}</span>
+              <span className="profile-copy"><strong>{context.fullName || 'Account'}</strong><small>{context.role === 'client_admin' ? 'Client Admin' : 'Employee'}</small></span>
+              <ChevronDown size={16} />
+            </button>
+            {profileOpen && (
+              <div className="profile-menu">
+                <strong>{context.fullName || 'Account'}</strong>
+                <small>{context.email}</small>
+                <button onClick={() => setActiveSection('profile')}>My Profile</button>
+                <button onClick={() => setActiveSection('change-password')}>Change Password</button>
+                {context.role === 'client_admin' && <button onClick={() => setActiveSection('user-management')}>User Management</button>}
+                {context.role === 'client_admin' && <button onClick={() => setActiveSection('branding')}>Branding Settings</button>}
+                <button onClick={logout}><LogOut size={15} /> Logout</button>
+              </div>
+            )}
           </div>
-        </div>
-        <button className="ghost" onClick={logout}><LogOut size={17} /> Sign out</button>
-      </header>
+        </header>
 
-      <section className="panel client-welcome">
-        <div className="brand-mark"><UserRound size={26} /></div>
-        <div>
-          <h2>Welcome, {context.fullName || context.email}</h2>
-          <p className="muted">Tenant: {context.tenantSlug} · Role: {context.role.replace('_', ' ')}</p>
-        </div>
-      </section>
+        <main className="msuk-content">
+          {activeSection === 'dashboard' ? (
+            <>
+              <div className="dashboard-heading">
+                <div><h1>Dashboard</h1><p>Your solar business at a glance — updated every minute.</p></div>
+              </div>
+              <section className="dashboard-grid">
+                {dashboardCards.map((card) => {
+                  const Icon = card.icon
+                  return (
+                    <button className="dashboard-card" key={card.label}>
+                      <div className={`kpi-icon ${card.tone}`}><Icon size={19} /></div>
+                      <ArrowRight size={16} className="card-arrow" />
+                      <div className="kpi-copy"><strong>{card.value}</strong><span>{card.label}</span><small>{card.hint}</small></div>
+                    </button>
+                  )
+                })}
+              </section>
+            </>
+          ) : (
+            <section className="panel module-placeholder">
+              <p className="eyebrow">MODULE BASE</p>
+              <h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2>
+              <p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p>
+            </section>
+          )}
+        </main>
 
-      <section className="stats-grid">
-        <article><span>Company</span><strong>{context.tenantName}</strong></article>
-        <article><span>Role</span><strong>{context.role === 'client_admin' ? 'Admin' : 'Employee'}</strong></article>
-        <article><span>Status</span><strong>Active</strong></article>
-      </section>
-
-      <section className="panel">
-        <h2>Company Details</h2>
-        <p className="muted">
-          {[context.tenantPhone, context.tenantEmail, context.tenantAddress].filter(Boolean).join(' · ') || 'Company contact details not added yet.'}
-        </p>
-        {context.tenantGstNumber && <p className="muted">GST: {context.tenantGstNumber}</p>}
-      </section>
+        <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
+      </div>
     </div>
   )
 }
