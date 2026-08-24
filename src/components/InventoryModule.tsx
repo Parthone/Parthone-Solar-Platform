@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Boxes, PackagePlus, Search, Truck, Undo2, UsersRound } from 'lucide-react'
+import '../inventory.css'
 import {
   availableStock,
   createInventoryItem,
