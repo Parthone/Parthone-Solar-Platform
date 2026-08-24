@@ -28,6 +28,7 @@ import LeadsModule from './components/LeadsModule'
 import SalesDocumentsModule from './components/SalesDocumentsModule'
 import InventoryModule from './components/InventoryModule'
 import FinanceModule from './components/FinanceModule'
+import EmployeesModule from './components/EmployeesModule'
 
 const accessMessages: Record<Exclude<ClientAccessState, 'allowed' | 'super_admin'>, string> = {
   user_inactive: 'Your user account is inactive. Contact your company administrator.',
@@ -61,7 +62,7 @@ export default function ClientPortal() {
   const [message, setMessage] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true, sales: true, inventory: true, finance: true })
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ journey: true, sales: true, inventory: true, finance: true, employees: true })
   const [activeSection, setActiveSection] = useState('dashboard')
 
   useEffect(() => {
@@ -151,6 +152,7 @@ export default function ClientPortal() {
         : salesDocumentModes.has(activeSection) && context.tenantId ? <SalesDocumentsModule tenantId={context.tenantId} mode={activeSection as 'quotations' | 'invoices' | 'invoice-reports'} />
         : inventoryModes.has(activeSection) && context.tenantId ? <InventoryModule tenantId={context.tenantId} mode={activeSection as 'inventory-overview' | 'purchases' | 'panel-inventory' | 'issues' | 'reservations' | 'movements' | 'suppliers'} />
         : financeModes.has(activeSection) && context.tenantId ? <FinanceModule tenantId={context.tenantId} mode={activeSection as 'expenses' | 'expense-categories' | 'account-statement-confirmation'} currentUserName={context.fullName} />
+        : activeSection === 'user-management' && context.tenantId && isAdmin ? <EmployeesModule tenantId={context.tenantId} currentUserId={context.userId} />
         : <section className="panel module-placeholder"><p className="eyebrow">MODULE BASE</p><h2>{navigation.flatMap((section) => [section, ...(section.items || [])]).find((item) => item.key === activeSection)?.label || 'Module'}</h2><p className="muted">Navigation is ready. This module will be connected to Firebase and rebuilt from the MSUK reference in its dedicated module.</p></section>}
       </main>
       <footer className="client-footer">{context.tenantName} · Solar Business Software</footer>
