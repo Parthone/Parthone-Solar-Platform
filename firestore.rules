@@ -7,9 +7,7 @@ service cloud.firestore {
     function tenantId() { return signedIn() ? userDoc().data.tenantId : null; }
     function userActive() { return signedIn() && userDoc().data.isActive != false; }
     function tenantDoc(id) { return get(/databases/$(database)/documents/tenants/$(id)); }
-    function tenantActive(id) {
-      return tenantDoc(id).data.status == 'active' && tenantDoc(id).data.planStatus != 'inactive';
-    }
+    function tenantActive(id) { return tenantDoc(id).data.status == 'active' && tenantDoc(id).data.planStatus != 'inactive'; }
     function isSuperAdmin() { return signedIn() && userActive() && role() == 'parthone_super_admin'; }
     function isClientAdmin() { return signedIn() && userActive() && role() == 'client_admin'; }
     function sameTenant(id) { return signedIn() && userActive() && tenantId() == id; }
@@ -18,7 +16,6 @@ service cloud.firestore {
     match /tenants/{tenantIdDoc} {
       allow read: if isSuperAdmin() || sameTenant(tenantIdDoc);
       allow create, update, delete: if isSuperAdmin();
-
       match /{document=**} {
         allow read, write: if isSuperAdmin() || activeSameTenant(tenantIdDoc);
       }
@@ -33,7 +30,6 @@ service cloud.firestore {
       allow read: if isSuperAdmin() ||
         (signedIn() && request.auth.uid == userId) ||
         (isClientAdmin() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
-
       allow create, delete: if isSuperAdmin();
       allow update: if isSuperAdmin() ||
         (signedIn() && request.auth.uid == userId &&
@@ -47,20 +43,27 @@ service cloud.firestore {
       allow read: if isSuperAdmin() ||
         (isClientAdmin() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId)) ||
         (signedIn() && request.auth.uid == resource.data.userId && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
-
       allow create: if signedIn() && userActive() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.tenantId == tenantId() &&
         activeSameTenant(request.resource.data.tenantId);
-
       allow update: if signedIn() && userActive() &&
         resource.data.userId == request.auth.uid &&
         resource.data.tenantId == tenantId() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.tenantId == tenantId() &&
         activeSameTenant(request.resource.data.tenantId);
-
       allow delete: if isSuperAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isSuperAdmin() || (isClientAdmin() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
+      allow write: if isSuperAdmin();
+    }
+
+    match /externalLinks/{linkId} {
+      allow read: if isSuperAdmin() || (signedIn() && resource.data.tenantId == tenantId() && activeSameTenant(resource.data.tenantId));
+      allow write: if isSuperAdmin();
     }
 
     match /platform/{document=**} {
